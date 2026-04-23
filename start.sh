@@ -2,7 +2,7 @@
 # 快速启动 YouTube 字幕提取器
 # Quick start script for YouTube Transcript Extractor
 
-cd /Users/mengnanzheng/Desktop/cursor/youtube-transcript-extractor
+cd /Users/mengnanzheng/Desktop/cursor/transcript-extractor
 
 echo "🚀 Starting YouTube Transcript Extractor..."
 
