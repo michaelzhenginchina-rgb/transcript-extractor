@@ -139,11 +139,17 @@ def extract():
     """Extract and format transcript from YouTube URL with timestamps"""
     try:
         data = request.json
-        url = data.get('url', '').strip()
-        filename = data.get('filename', '').strip()
+        if not data:
+            return jsonify({'error': 'Invalid request data'}), 400
 
-        if not url:
+        url = data.get('url', '') or ''
+        filename = data.get('filename', '') or ''
+
+        if not url or not url.strip():
             return jsonify({'error': 'YouTube URL is required'}), 400
+
+        url = url.strip()
+        filename = filename.strip()
 
         # Extract video ID
         video_id = extract_video_id(url)
@@ -216,13 +222,17 @@ def extract_audio():
     """Extract audio segment from YouTube video for language learning"""
     try:
         data = request.json
-        video_url = data.get('video_url', '').strip()
+        if not data:
+            return jsonify({'error': 'Invalid request data'}), 400
+
+        video_url = data.get('video_url', '') or ''
+        if not video_url or not video_url.strip():
+            return jsonify({'error': 'Video URL is required'}), 400
+
+        video_url = video_url.strip()
         start_time = float(data.get('start_time', 0))
         end_time = float(data.get('end_time', 0))
-        segment_name = data.get('segment_name', 'segment').strip()
-
-        if not video_url:
-            return jsonify({'error': 'Video URL is required'}), 400
+        segment_name = (data.get('segment_name') or 'segment').strip()
 
         if start_time >= end_time:
             return jsonify({'error': 'End time must be greater than start time'}), 400
