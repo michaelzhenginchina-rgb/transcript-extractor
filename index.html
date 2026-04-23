@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube 字幕提取器</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: linear-gradient(135deg, #ff6b6b 0%, #feca57 100%);
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 700px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #ff6b6b 0%, #feca57 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+
+        .form-content {
+            padding: 30px;
+        }
+
+        .form-group {
+            margin-bottom: 25px;
+        }
+
+        .form-group label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #333;
+            font-size: 14px;
+        }
+
+        .form-group label .required {
+            color: #e74c3c;
+        }
+
+        .form-group input[type="text"] {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            font-family: inherit;
+            transition: border-color 0.3s;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: #ff6b6b;
+        }
+
+        .form-group small {
+            display: block;
+            margin-top: 5px;
+            color: #7f8c8d;
+            font-size: 12px;
+        }
+
+        .buttons {
+            display: flex;
+            gap: 15px;
+            margin-top: 30px;
+        }
+
+        .btn {
+            flex: 1;
+            padding: 15px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #ff6b6b 0%, #feca57 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(255, 107, 107, 0.4);
+        }
+
+        .btn-primary:disabled {
+            background: #bdc3c7;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-secondary {
+            background: #ecf0f1;
+            color: #7f8c8d;
+        }
+
+        .btn-secondary:hover {
+            background: #d5dbdb;
+        }
+
+        .output {
+            margin-top: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            display: none;
+        }
+
+        .output.show {
+            display: block;
+        }
+
+        .output h3 {
+            margin-bottom: 15px;
+            color: #333;
+        }
+
+        .output pre {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            overflow-x: auto;
+            font-size: 13px;
+            line-height: 1.8;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .copy-btn {
+            margin-top: 10px;
+            padding: 10px 20px;
+            background: #27ae60;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .copy-btn:hover {
+            background: #229954;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+            color: #7f8c8d;
+        }
+
+        .loading.show {
+            display: block;
+        }
+
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #ff6b6b;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .error {
+            background: #fee;
+            color: #c33;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            display: none;
+        }
+
+        .error.show {
+            display: block;
+        }
+
+        .success {
+            background: #efe;
+            color: #3c3;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            display: none;
+        }
+
+        .success.show {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎬 YouTube 字幕提取器</h1>
+            <p>快速提取并格式化 YouTube 视频字幕</p>
+        </div>
+
+        <div class="form-content">
+            <form id="transcriptForm">
+                <div class="form-group">
+                    <label for="youtubeUrl">YouTube 链接 <span class="required">*</span></label>
+                    <input type="text" id="youtubeUrl" required placeholder="https://www.youtube.com/watch?v=...">
+                    <small>粘贴任何 YouTube 视频链接</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="filename">文件名（可选）</label>
+                    <input type="text" id="filename" placeholder="例如: Mario-Ho-Interview">
+                    <small>留空则自动生成文件名</small>
+                </div>
+
+                <div class="buttons">
+                    <button type="button" class="btn btn-secondary" onclick="clearForm()">清空</button>
+                    <button type="submit" class="btn btn-primary" id="submitBtn">提取字幕</button>
+                </div>
+            </form>
+
+            <!-- Loading -->
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <p>正在提取和格式化字幕...</p>
+            </div>
+
+            <!-- Error -->
+            <div class="error" id="error"></div>
+
+            <!-- Success -->
+            <div class="success" id="success"></div>
+
+            <!-- Output -->
+            <div class="output" id="output">
+                <h3>✅ 字幕已提取并格式化</h3>
+                <pre id="transcriptContent"></pre>
+                <button class="copy-btn" onclick="copyTranscript()">📋 复制到剪贴板</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('transcriptForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+
+            const youtubeUrl = document.getElementById('youtubeUrl').value.trim();
+            const filename = document.getElementById('filename').value.trim();
+            const submitBtn = document.getElementById('submitBtn');
+            const loading = document.getElementById('loading');
+            const output = document.getElementById('output');
+            const error = document.getElementById('error');
+            const success = document.getElementById('success');
+
+            // Hide previous results
+            output.classList.remove('show');
+            error.classList.remove('show');
+            success.classList.remove('show');
+
+            // Show loading
+            submitBtn.disabled = true;
+            loading.classList.add('show');
+
+            try {
+                const response = await fetch('http://localhost:8002/extract', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        url: youtubeUrl,
+                        filename: filename || null
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    // Success
+                    document.getElementById('transcriptContent').textContent = data.transcript;
+                    output.classList.add('show');
+                    success.innerHTML = `✅ 字幕已保存到: <strong>${data.file_path}</strong>`;
+                    success.classList.add('show');
+                    output.scrollIntoView({ behavior: 'smooth' });
+                } else {
+                    // Error
+                    error.innerHTML = `❌ ${data.error || '提取失败'}`;
+                    error.classList.add('show');
+                }
+            } catch (err) {
+                error.innerHTML = `❌ 连接服务器失败: ${err.message}<br>请确保服务器正在运行`;
+                error.classList.add('show');
+            } finally {
+                submitBtn.disabled = false;
+                loading.classList.remove('show');
+            }
+        });
+
+        function clearForm() {
+            document.getElementById('transcriptForm').reset();
+            document.getElementById('output').classList.remove('show');
+            document.getElementById('error').classList.remove('show');
+            document.getElementById('success').classList.remove('show');
+        }
+
+        function copyTranscript() {
+            const transcript = document.getElementById('transcriptContent').textContent;
+            navigator.clipboard.writeText(transcript).then(() => {
+                const btn = document.querySelector('.copy-btn');
+                btn.textContent = '✅ 已复制!';
+                setTimeout(() => {
+                    btn.textContent = '📋 复制到剪贴板';
+                }, 2000);
+            }).catch(err => {
+                alert('复制失败，请手动复制');
+            });
+        }
+    </script>
+</body>
+</html>
