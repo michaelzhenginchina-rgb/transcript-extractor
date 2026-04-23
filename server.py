@@ -266,6 +266,106 @@ def extract_audio():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/extract-batch-audio', methods=['POST'])
+def extract_batch_audio():
+    """Extract multiple audio segments and combine them for language learning"""
+    try:
+        data = request.json
+        if not data:
+            return jsonify({'error': 'Invalid request data'}), 400
+
+        video_url = data.get('video_url', '') or ''
+        segments = data.get('segments', [])
+        output_name = (data.get('output_name') or 'combined').strip()
+
+        if not video_url or not video_url.strip():
+            return jsonify({'error': 'Video URL is required'}), 400
+
+        if not segments:
+            return jsonify({'error': 'No segments provided'}), 400
+
+        video_url = video_url.strip()
+        desktop_path = os.path.expanduser("~/Desktop")
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        # Extract each segment
+        audio_files = []
+        total_duration = 0
+
+        for i, segment in enumerate(segments):
+            start_time = float(segment['start'])
+            end_time = start_time + float(segment['duration'])
+            total_duration += float(segment['duration'])
+
+            # Create output filename for this segment
+            segment_filename = os.path.join(desktop_path, f"{output_name}_part{i+1}_{timestamp}.mp3")
+
+            # Extract audio for this segment
+            try:
+                extract_audio_segment(video_url, start_time, end_time, segment_filename)
+                audio_files.append(segment_filename)
+            except Exception as e:
+                print(f"Warning: Failed to extract segment {i+1}: {str(e)}")
+
+        if not audio_files:
+            return jsonify({'error': 'Failed to extract any audio segments'}), 500
+
+        # Combine all audio files using ffmpeg
+        combined_filename = os.path.join(desktop_path, f"{output_name}_combined_{timestamp}.mp3")
+
+        # Create a list file for ffmpeg concat
+        list_file = os.path.join(desktop_path, f"ffmpeg_list_{timestamp}.txt")
+        with open(list_file, 'w') as f:
+            for audio_file in audio_files:
+                f.write(f"file '{audio_file}'\n")
+
+        # Use ffmpeg to combine
+        cmd = [
+            'ffmpeg',
+            '-f', 'concat',
+            '-safe', '0',
+            '-i', list_file,
+            '-c', 'copy',
+            combined_filename,
+            '-y'  # Overwrite output file if exists
+        ]
+
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+
+        # Clean up the list file
+        try:
+            os.remove(list_file)
+        except:
+            pass
+
+        if result.returncode != 0:
+            # If combining failed, at least return individual files
+            return jsonify({
+                'success': True,
+                'audio_files': audio_files,
+                'combined_audio': None,
+                'total_duration': total_duration,
+                'segment_count': len(audio_files)
+            })
+
+        # Clean up individual files after successful combine
+        for audio_file in audio_files:
+            try:
+                os.remove(audio_file)
+            except:
+                pass
+
+        return jsonify({
+            'success': True,
+            'audio_files': audio_files,
+            'combined_audio': combined_filename,
+            'total_duration': total_duration,
+            'segment_count': len(audio_files)
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 if __name__ == '__main__':
     print("🚀 Starting YouTube Transcript Extractor Server...")
     print("📡 Server running at: http://localhost:8002")

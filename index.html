@@ -326,6 +326,64 @@
         .extracting-audio.show {
             display: block;
         }
+
+        .selected-count {
+            background: #ff6b6b;
+            color: white;
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 600;
+            display: none;
+        }
+
+        .selected-count.show {
+            display: inline-block;
+        }
+
+        .download-selected-btn {
+            background: linear-gradient(135deg, #27ae60 0%, #229954 100%);
+            color: white;
+            padding: 12px 25px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: none;
+        }
+
+        .download-selected-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(39, 174, 96, 0.4);
+        }
+
+        .download-selected-btn.show {
+            display: inline-block;
+        }
+
+        .download-section {
+            margin-top: 20px;
+            padding: 20px;
+            background: #e8f5e9;
+            border-radius: 8px;
+            display: none;
+        }
+
+        .download-section.show {
+            display: block;
+        }
+
+        .selection-toolbar {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
     </style>
 </head>
 <body>
@@ -378,6 +436,15 @@
 
                 <!-- Timestamp View -->
                 <div id="timestampsTab" class="tab-content active">
+                    <div class="selection-toolbar">
+                        <span style="flex: 1; color: #666; font-size: 14px;">
+                            💡 点击片段进行选择，再次点击取消选择
+                        </span>
+                        <span class="selected-count" id="selectedCount">已选 0 个片段</span>
+                        <button class="download-selected-btn" id="downloadSelectedBtn" onclick="downloadSelectedAudio()">
+                            📥 下载选中片段的音频
+                        </button>
+                    </div>
                     <div class="transcript-container" id="transcriptContainer">
                         <!-- Segments will be inserted here -->
                     </div>
@@ -388,16 +455,6 @@
                     <pre class="plain-transcript" id="plainTranscript"></pre>
                 </div>
 
-                <!-- Audio Extraction Section -->
-                <div class="audio-section" id="audioSection">
-                    <h4>🎵 音频提取</h4>
-                    <p id="selectedSegmentInfo">点击上方任意字幕片段提取音频</p>
-                    <div id="extractingAudio" class="extracting-audio">
-                        <p>⏳ 正在提取音频...</p>
-                    </div>
-                    <audio id="audioPlayer" class="audio-player" controls></audio>
-                </div>
-
                 <button class="copy-btn" onclick="copyTranscript()">📋 复制纯文本到剪贴板</button>
             </div>
         </div>
@@ -405,7 +462,7 @@
 
     <script>
         let currentData = null;
-        let selectedSegment = null;
+        let selectedSegments = new Set(); // Store indices of selected segments
 
         document.getElementById('transcriptForm').addEventListener('submit', async function(e) {
             e.preventDefault();
@@ -471,80 +528,81 @@
         function displayTimestampedTranscript(segments) {
             const container = document.getElementById('transcriptContainer');
             container.innerHTML = '';
+            selectedSegments.clear(); // Clear previous selections
+            updateSelectionUI();
 
             segments.forEach((segment, index) => {
                 const div = document.createElement('div');
                 div.className = 'transcript-segment';
+                div.dataset.index = index;
                 div.innerHTML = `
                     <div class="segment-timestamp">⏱ ${segment.timestamp}</div>
                     <div class="segment-text">${segment.text}</div>
                 `;
 
-                div.addEventListener('click', () => selectSegment(segment, div));
+                div.addEventListener('click', () => toggleSegmentSelection(segment, index, div));
                 container.appendChild(div);
             });
         }
 
-        function selectSegment(segment, element) {
-            // Remove previous selection
-            document.querySelectorAll('.transcript-segment').forEach(el => {
-                el.classList.remove('selected');
-            });
+        function toggleSegmentSelection(segment, index, element) {
+            if (selectedSegments.has(index)) {
+                // Deselect
+                selectedSegments.delete(index);
+                element.classList.remove('selected');
+            } else {
+                // Select
+                selectedSegments.add(index);
+                element.classList.add('selected');
+            }
 
-            // Select current segment
-            element.classList.add('selected');
-            selectedSegment = segment;
-
-            // Update audio section
-            const audioSection = document.getElementById('audioSection');
-            const selectedInfo = document.getElementById('selectedSegmentInfo');
-            const extractingAudio = document.getElementById('extractingAudio');
-            const audioPlayer = document.getElementById('audioPlayer');
-
-            audioSection.classList.add('show');
-            selectedInfo.innerHTML = `选中片段: <strong>${segment.timestamp}</strong> - "${segment.text.substring(0, 50)}..."`;
-            extractingAudio.classList.remove('show');
-
-            // Extract audio for this segment
-            extractAudioForSegment(segment);
+            updateSelectionUI();
         }
 
-        async function extractAudioForSegment(segment) {
-            const extractingAudio = document.getElementById('extractingAudio');
-            const audioPlayer = document.getElementById('audioPlayer');
+        function updateSelectionUI() {
+            const count = selectedSegments.size;
+            const selectedCountEl = document.getElementById('selectedCount');
+            const downloadBtn = document.getElementById('downloadSelectedBtn');
 
-            extractingAudio.classList.add('show');
-            audioPlayer.style.display = 'none';
+            if (count > 0) {
+                selectedCountEl.textContent = `已选 ${count} 个片段`;
+                selectedCountEl.classList.add('show');
+                downloadBtn.classList.add('show');
+            } else {
+                selectedCountEl.classList.remove('show');
+                downloadBtn.classList.remove('show');
+            }
+        }
+
+        async function downloadSelectedAudio() {
+            if (selectedSegments.size === 0 || !currentData) return;
+
+            const segments = currentData.timestamped_transcript;
+            const selectedIndices = Array.from(selectedSegments).sort((a, b) => a - b);
+            const selectedSegmentsData = selectedIndices.map(i => segments[i]);
 
             try {
-                const startTime = segment.start;
-                const endTime = segment.start + segment.duration;
-
-                const response = await fetch('http://localhost:8002/extract-audio', {
+                const response = await fetch('http://localhost:8002/extract-batch-audio', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
                         video_url: currentData.video_url,
-                        start_time: startTime,
-                        end_time: endTime,
-                        segment_name: segment.text.substring(0, 20).replace(/\s+/g, '_')
+                        segments: selectedSegmentsData,
+                        output_name: 'selected_segments'
                     })
                 });
 
                 const data = await response.json();
 
                 if (response.ok) {
-                    extractingAudio.classList.remove('show');
-                    audioPlayer.src = 'file://' + data.audio_file;
-                    audioPlayer.style.display = 'block';
-                    audioPlayer.play();
+                    alert(`✅ 成功提取 ${selectedIndices.length} 个片段的音频！\n\n保存位置: ${data.combined_audio}\n\n总计时长: ${data.total_duration.toFixed(1)} 秒`);
                 } else {
-                    extractingAudio.innerHTML = `❌ ${data.error || '音频提取失败'}`;
+                    alert(`❌ 音频提取失败: ${data.error}`);
                 }
             } catch (err) {
-                extractingAudio.innerHTML = `❌ 音频提取失败: ${err.message}`;
+                alert(`❌ 音频提取失败: ${err.message}`);
             }
         }
 
@@ -564,7 +622,7 @@
             document.getElementById('error').classList.remove('show');
             document.getElementById('success').classList.remove('show');
             currentData = null;
-            selectedSegment = null;
+            selectedSegments.clear();
         }
 
         function copyTranscript() {
