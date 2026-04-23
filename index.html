@@ -441,8 +441,11 @@
                             💡 点击片段进行选择，再次点击取消选择
                         </span>
                         <span class="selected-count" id="selectedCount">已选 0 个片段</span>
-                        <button class="download-selected-btn" id="downloadSelectedBtn" onclick="downloadSelectedAudio()">
-                            📥 下载选中片段的音频
+                        <button class="download-selected-btn" id="downloadAudioBtn" onclick="downloadSelectedMedia('audio')">
+                            🎵 下载音频
+                        </button>
+                        <button class="download-selected-btn" id="downloadVideoBtn" onclick="downloadSelectedMedia('video')" style="background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);">
+                            🎥 下载视频
                         </button>
                     </div>
                     <div class="transcript-container" id="transcriptContainer">
@@ -574,15 +577,18 @@
             }
         }
 
-        async function downloadSelectedAudio() {
+        async function downloadSelectedMedia(type) {
             if (selectedSegments.size === 0 || !currentData) return;
 
             const segments = currentData.timestamped_transcript;
             const selectedIndices = Array.from(selectedSegments).sort((a, b) => a - b);
             const selectedSegmentsData = selectedIndices.map(i => segments[i]);
 
+            const endpoint = type === 'audio' ? 'extract-batch-audio' : 'extract-batch-video';
+            const mediaType = type === 'audio' ? '音频' : '视频';
+
             try {
-                const response = await fetch('http://localhost:8002/extract-batch-audio', {
+                const response = await fetch(`http://localhost:8002/${endpoint}`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -590,19 +596,26 @@
                     body: JSON.stringify({
                         video_url: currentData.video_url,
                         segments: selectedSegmentsData,
-                        output_name: 'selected_segments'
+                        output_name: `selected_segments_${type}`
                     })
                 });
 
                 const data = await response.json();
 
                 if (response.ok) {
-                    alert(`✅ 成功提取 ${selectedIndices.length} 个片段的音频！\n\n保存位置: ${data.combined_audio}\n\n总计时长: ${data.total_duration.toFixed(1)} 秒`);
+                    const message = `✅ 成功提取 ${selectedIndices.length} 个片段的${mediaType}！\n\n`;
+                    if (data.combined_file) {
+                        message += `保存位置: ${data.combined_file}\n\n`;
+                    } else {
+                        message += `保存位置: ${data.audio_files.join('\n')}\n\n`;
+                    }
+                    message += `总计时长: ${data.total_duration.toFixed(1)} 秒`;
+                    alert(message);
                 } else {
-                    alert(`❌ 音频提取失败: ${data.error}`);
+                    alert(`❌ ${mediaType}提取失败: ${data.error}`);
                 }
             } catch (err) {
-                alert(`❌ 音频提取失败: ${err.message}`);
+                alert(`❌ ${mediaType}提取失败: ${err.message}`);
             }
         }
 

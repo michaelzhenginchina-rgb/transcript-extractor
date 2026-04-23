@@ -343,7 +343,7 @@ def extract_batch_audio():
             return jsonify({
                 'success': True,
                 'audio_files': audio_files,
-                'combined_audio': None,
+                'combined_file': None,
                 'total_duration': total_duration,
                 'segment_count': len(audio_files)
             })
@@ -358,13 +358,141 @@ def extract_batch_audio():
         return jsonify({
             'success': True,
             'audio_files': audio_files,
-            'combined_audio': combined_filename,
+            'combined_file': combined_filename,
             'total_duration': total_duration,
             'segment_count': len(audio_files)
         })
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@app.route('/extract-batch-video', methods=['POST'])
+def extract_batch_video():
+    """Extract multiple video segments and combine them for language learning"""
+    try:
+        data = request.json
+        if not data:
+            return jsonify({'error': 'Invalid request data'}), 400
+
+        video_url = data.get('video_url', '') or ''
+        segments = data.get('segments', [])
+        output_name = (data.get('output_name') or 'combined').strip()
+
+        if not video_url or not video_url.strip():
+            return jsonify({'error': 'Video URL is required'}), 400
+
+        if not segments:
+            return jsonify({'error': 'No segments provided'}), 400
+
+        video_url = video_url.strip()
+        desktop_path = os.path.expanduser("~/Desktop")
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        # Extract each segment
+        video_files = []
+        total_duration = 0
+
+        for i, segment in enumerate(segments):
+            start_time = float(segment['start'])
+            end_time = start_time + float(segment['duration'])
+            total_duration += float(segment['duration'])
+
+            # Create output filename for this segment
+            segment_filename = os.path.join(desktop_path, f"{output_name}_part{i+1}_{timestamp}.mp4")
+
+            # Extract video for this segment
+            try:
+                extract_video_segment(video_url, start_time, end_time, segment_filename)
+                video_files.append(segment_filename)
+            except Exception as e:
+                print(f"Warning: Failed to extract segment {i+1}: {str(e)}")
+
+        if not video_files:
+            return jsonify({'error': 'Failed to extract any video segments'}), 500
+
+        # Combine all video files using ffmpeg
+        combined_filename = os.path.join(desktop_path, f"{output_name}_combined_{timestamp}.mp4")
+
+        # Create a list file for ffmpeg concat
+        list_file = os.path.join(desktop_path, f"ffmpeg_list_{timestamp}.txt")
+        with open(list_file, 'w') as f:
+            for video_file in video_files:
+                f.write(f"file '{video_file}'\n")
+
+        # Use ffmpeg to combine
+        cmd = [
+            'ffmpeg',
+            '-f', 'concat',
+            '-safe', '0',
+            '-i', list_file,
+            '-c', 'copy',
+            combined_filename,
+            '-y'  # Overwrite output file if exists
+        ]
+
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+
+        # Clean up the list file
+        try:
+            os.remove(list_file)
+        except:
+            pass
+
+        if result.returncode != 0:
+            # If combining failed, at least return individual files
+            return jsonify({
+                'success': True,
+                'audio_files': video_files,
+                'combined_file': None,
+                'total_duration': total_duration,
+                'segment_count': len(video_files)
+            })
+
+        # Clean up individual files after successful combine
+        for video_file in video_files:
+            try:
+                os.remove(video_file)
+            except:
+                pass
+
+        return jsonify({
+            'success': True,
+            'audio_files': video_files,
+            'combined_file': combined_filename,
+            'total_duration': total_duration,
+            'segment_count': len(video_files)
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+def extract_video_segment(video_url, start_time, end_time, output_filename):
+    """Extract video segment from YouTube video using yt-dlp and ffmpeg"""
+    try:
+        # Calculate duration
+        duration = end_time - start_time
+
+        # Use yt-dlp to download the specific video segment
+        cmd = [
+            'yt-dlp',
+            '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+            '--external-downloader', 'ffmpeg',
+            '--external-downloader-args', f'-ss {start_time} -t {duration}',
+            '-o', output_filename,
+            video_url
+        ]
+
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+
+        if result.returncode != 0:
+            raise Exception(f"Failed to extract video: {result.stderr}")
+
+        return output_filename
+
+    except subprocess.TimeoutExpired:
+        raise Exception("Video extraction timed out")
+    except Exception as e:
+        raise Exception(f"Failed to extract video: {str(e)}")
 
 if __name__ == '__main__':
     print("🚀 Starting YouTube Transcript Extractor Server...")
