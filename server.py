@@ -56,9 +56,18 @@ def get_transcript(video_id):
         # Fetch the transcript with full data (text, start, duration)
         transcript_data = transcript_obj.fetch()
 
+        # Convert FetchedTranscriptSnippet objects to dictionaries
+        transcript_dict = []
+        for entry in transcript_data:
+            transcript_dict.append({
+                'text': entry.text,
+                'start': entry.start,
+                'duration': entry.duration
+            })
+
         # Return both text and timestamp data
-        raw_text = '\n'.join([entry.text for entry in transcript_data])
-        return raw_text, transcript_data
+        raw_text = '\n'.join([entry['text'] for entry in transcript_dict])
+        return raw_text, transcript_dict
 
     except Exception as e:
         raise Exception(f"Failed to extract transcript: {str(e)}")
