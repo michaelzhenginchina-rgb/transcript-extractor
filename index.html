@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>YouTube 字幕提取器</title>
+    <title>YouTube 字幕提取器 - 学习版</title>
     <style>
         * {
             margin: 0;
@@ -19,7 +19,7 @@
         }
 
         .container {
-            max-width: 700px;
+            max-width: 900px;
             margin: 0 auto;
             background: white;
             border-radius: 12px;
@@ -145,17 +145,76 @@
             color: #333;
         }
 
-        .output pre {
+        .transcript-container {
             background: white;
             padding: 20px;
             border-radius: 8px;
-            overflow-x: auto;
-            font-size: 13px;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+
+        .transcript-segment {
+            padding: 12px;
+            margin-bottom: 8px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+            border-left: 3px solid transparent;
+        }
+
+        .transcript-segment:hover {
+            background: #fff3cd;
+            border-left-color: #ff6b6b;
+        }
+
+        .transcript-segment.selected {
+            background: #fff3cd;
+            border-left-color: #ff6b6b;
+        }
+
+        .segment-timestamp {
+            color: #ff6b6b;
+            font-weight: 600;
+            font-size: 12px;
+            margin-bottom: 4px;
+        }
+
+        .segment-text {
+            color: #333;
+            line-height: 1.6;
+        }
+
+        .plain-transcript {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
             line-height: 1.8;
             white-space: pre-wrap;
             word-wrap: break-word;
             max-height: 400px;
             overflow-y: auto;
+        }
+
+        .audio-section {
+            margin-top: 20px;
+            padding: 20px;
+            background: #e8f5e9;
+            border-radius: 8px;
+            display: none;
+        }
+
+        .audio-section.show {
+            display: block;
+        }
+
+        .audio-section h4 {
+            color: #2e7d32;
+            margin-bottom: 10px;
+        }
+
+        .audio-player {
+            width: 100%;
+            margin-top: 10px;
         }
 
         .copy-btn {
@@ -171,6 +230,36 @@
 
         .copy-btn:hover {
             background: #229954;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .tab {
+            padding: 10px 20px;
+            background: #ecf0f1;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+
+        .tab.active {
+            background: #ff6b6b;
+            color: white;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
         }
 
         .loading {
@@ -224,13 +313,26 @@
         .success.show {
             display: block;
         }
+
+        .extracting-audio {
+            display: none;
+            text-align: center;
+            padding: 15px;
+            background: #fff3cd;
+            border-radius: 6px;
+            margin-top: 10px;
+        }
+
+        .extracting-audio.show {
+            display: block;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>🎬 YouTube 字幕提取器</h1>
-            <p>快速提取并格式化 YouTube 视频字幕</p>
+            <h1>🎬 YouTube 字幕提取器 - 学习版</h1>
+            <p>提取字幕 + 点击任意片段提取音频进行学习</p>
         </div>
 
         <div class="form-content">
@@ -267,14 +369,44 @@
 
             <!-- Output -->
             <div class="output" id="output">
-                <h3>✅ 字幕已提取并格式化</h3>
-                <pre id="transcriptContent"></pre>
-                <button class="copy-btn" onclick="copyTranscript()">📋 复制到剪贴板</button>
+                <h3>✅ 字幕已提取</h3>
+
+                <div class="tabs">
+                    <button class="tab active" onclick="switchTab('timestamps')">带时间戳（学习模式）</button>
+                    <button class="tab" onclick="switchTab('plain')">纯文本</button>
+                </div>
+
+                <!-- Timestamp View -->
+                <div id="timestampsTab" class="tab-content active">
+                    <div class="transcript-container" id="transcriptContainer">
+                        <!-- Segments will be inserted here -->
+                    </div>
+                </div>
+
+                <!-- Plain Text View -->
+                <div id="plainTab" class="tab-content">
+                    <pre class="plain-transcript" id="plainTranscript"></pre>
+                </div>
+
+                <!-- Audio Extraction Section -->
+                <div class="audio-section" id="audioSection">
+                    <h4>🎵 音频提取</h4>
+                    <p id="selectedSegmentInfo">点击上方任意字幕片段提取音频</p>
+                    <div id="extractingAudio" class="extracting-audio">
+                        <p>⏳ 正在提取音频...</p>
+                    </div>
+                    <audio id="audioPlayer" class="audio-player" controls></audio>
+                </div>
+
+                <button class="copy-btn" onclick="copyTranscript()">📋 复制纯文本到剪贴板</button>
             </div>
         </div>
     </div>
 
     <script>
+        let currentData = null;
+        let selectedSegment = null;
+
         document.getElementById('transcriptForm').addEventListener('submit', async function(e) {
             e.preventDefault();
 
@@ -310,14 +442,20 @@
                 const data = await response.json();
 
                 if (response.ok) {
-                    // Success
-                    document.getElementById('transcriptContent').textContent = data.transcript;
+                    currentData = data;
+
+                    // Display transcript with timestamps
+                    displayTimestampedTranscript(data.timestamped_transcript);
+
+                    // Display plain text
+                    document.getElementById('plainTranscript').textContent = data.transcript;
+
+                    // Show success
                     output.classList.add('show');
                     success.innerHTML = `✅ 字幕已保存到: <strong>${data.file_path}</strong>`;
                     success.classList.add('show');
                     output.scrollIntoView({ behavior: 'smooth' });
                 } else {
-                    // Error
                     error.innerHTML = `❌ ${data.error || '提取失败'}`;
                     error.classList.add('show');
                 }
@@ -330,20 +468,114 @@
             }
         });
 
+        function displayTimestampedTranscript(segments) {
+            const container = document.getElementById('transcriptContainer');
+            container.innerHTML = '';
+
+            segments.forEach((segment, index) => {
+                const div = document.createElement('div');
+                div.className = 'transcript-segment';
+                div.innerHTML = `
+                    <div class="segment-timestamp">⏱ ${segment.timestamp}</div>
+                    <div class="segment-text">${segment.text}</div>
+                `;
+
+                div.addEventListener('click', () => selectSegment(segment, div));
+                container.appendChild(div);
+            });
+        }
+
+        function selectSegment(segment, element) {
+            // Remove previous selection
+            document.querySelectorAll('.transcript-segment').forEach(el => {
+                el.classList.remove('selected');
+            });
+
+            // Select current segment
+            element.classList.add('selected');
+            selectedSegment = segment;
+
+            // Update audio section
+            const audioSection = document.getElementById('audioSection');
+            const selectedInfo = document.getElementById('selectedSegmentInfo');
+            const extractingAudio = document.getElementById('extractingAudio');
+            const audioPlayer = document.getElementById('audioPlayer');
+
+            audioSection.classList.add('show');
+            selectedInfo.innerHTML = `选中片段: <strong>${segment.timestamp}</strong> - "${segment.text.substring(0, 50)}..."`;
+            extractingAudio.classList.remove('show');
+
+            // Extract audio for this segment
+            extractAudioForSegment(segment);
+        }
+
+        async function extractAudioForSegment(segment) {
+            const extractingAudio = document.getElementById('extractingAudio');
+            const audioPlayer = document.getElementById('audioPlayer');
+
+            extractingAudio.classList.add('show');
+            audioPlayer.style.display = 'none';
+
+            try {
+                const startTime = segment.start;
+                const endTime = segment.start + segment.duration;
+
+                const response = await fetch('http://localhost:8002/extract-audio', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        video_url: currentData.video_url,
+                        start_time: startTime,
+                        end_time: endTime,
+                        segment_name: segment.text.substring(0, 20).replace(/\s+/g, '_')
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    extractingAudio.classList.remove('show');
+                    audioPlayer.src = 'file://' + data.audio_file;
+                    audioPlayer.style.display = 'block';
+                    audioPlayer.play();
+                } else {
+                    extractingAudio.innerHTML = `❌ ${data.error || '音频提取失败'}`;
+                }
+            } catch (err) {
+                extractingAudio.innerHTML = `❌ 音频提取失败: ${err.message}`;
+            }
+        }
+
+        function switchTab(tab) {
+            // Update tab buttons
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            event.target.classList.add('active');
+
+            // Update tab content
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            document.getElementById(tab + 'Tab').classList.add('active');
+        }
+
         function clearForm() {
             document.getElementById('transcriptForm').reset();
             document.getElementById('output').classList.remove('show');
             document.getElementById('error').classList.remove('show');
             document.getElementById('success').classList.remove('show');
+            currentData = null;
+            selectedSegment = null;
         }
 
         function copyTranscript() {
-            const transcript = document.getElementById('transcriptContent').textContent;
+            if (!currentData) return;
+
+            const transcript = currentData.transcript;
             navigator.clipboard.writeText(transcript).then(() => {
                 const btn = document.querySelector('.copy-btn');
                 btn.textContent = '✅ 已复制!';
                 setTimeout(() => {
-                    btn.textContent = '📋 复制到剪贴板';
+                    btn.textContent = '📋 复制纯文本到剪贴板';
                 }, 2000);
             }).catch(err => {
                 alert('复制失败，请手动复制');
