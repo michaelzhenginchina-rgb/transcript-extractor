@@ -565,15 +565,20 @@
         function updateSelectionUI() {
             const count = selectedSegments.size;
             const selectedCountEl = document.getElementById('selectedCount');
-            const downloadBtn = document.getElementById('downloadSelectedBtn');
+            const downloadAudioBtn = document.getElementById('downloadAudioBtn');
+            const downloadVideoBtn = document.getElementById('downloadVideoBtn');
+
+            if (!selectedCountEl || !downloadAudioBtn || !downloadVideoBtn) return;
 
             if (count > 0) {
                 selectedCountEl.textContent = `已选 ${count} 个片段`;
                 selectedCountEl.classList.add('show');
-                downloadBtn.classList.add('show');
+                downloadAudioBtn.classList.add('show');
+                downloadVideoBtn.classList.add('show');
             } else {
                 selectedCountEl.classList.remove('show');
-                downloadBtn.classList.remove('show');
+                downloadAudioBtn.classList.remove('show');
+                downloadVideoBtn.classList.remove('show');
             }
         }
 
