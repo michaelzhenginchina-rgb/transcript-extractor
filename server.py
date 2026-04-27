@@ -27,15 +27,27 @@ CORS(app)
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 
 def extract_video_id(url):
-    """Extract video ID from YouTube URL"""
+    """Extract video ID from YouTube URL (including short URLs)"""
     patterns = [
-        r'(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})',
-        r'youtube\.com\/watch\?.*v=([a-zA-Z0-9_-]{11})'
+        # Standard YouTube watch URLs
+        r'youtube\.com\/watch\?.*v=([a-zA-Z0-9_-]{11})',
+        # Short youtu.be URLs
+        r'youtu\.be\/([a-zA-Z0-9_-]{11})',
+        # Embed URLs
+        r'youtube\.com\/embed\/([a-zA-Z0-9_-]{11})',
+        # Short URLs with parameters
+        r'youtu\.be\/([a-zA-Z0-9_-]{11})\?',
     ]
     for pattern in patterns:
         match = re.search(pattern, url)
         if match:
             return match.group(1)
+
+    # If no match, try to extract any 11-character YouTube ID pattern
+    generic_match = re.search(r'([a-zA-Z0-9_-]{11})', url)
+    if generic_match:
+        return generic_match.group(1)
+
     return None
 
 def get_transcript(video_id):
