@@ -455,10 +455,12 @@
 
                 <!-- Plain Text View -->
                 <div id="plainTab" class="tab-content">
+                    <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                        <button class="copy-btn" onclick="copyTranscript()" style="flex: 1;">📋 复制纯文本到剪贴板</button>
+                        <button class="copy-btn" onclick="downloadFullAudio()" style="flex: 1; background: linear-gradient(135deg, #ff6b6b 0%, #feca57 100%);">🎵 下载完整音频</button>
+                    </div>
                     <pre class="plain-transcript" id="plainTranscript"></pre>
                 </div>
-
-                <button class="copy-btn" onclick="copyTranscript()">📋 复制纯文本到剪贴板</button>
             </div>
         </div>
     </div>
@@ -621,6 +623,35 @@
                 }
             } catch (err) {
                 alert(`❌ ${mediaType}提取失败: ${err.message}`);
+            }
+        }
+
+        async function downloadFullAudio() {
+            if (!currentData) return;
+
+            try {
+                alert('⏳ 开始下载完整音频，请稍候...');
+
+                const response = await fetch('http://localhost:8002/download-full-audio', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        video_url: currentData.video_url,
+                        output_name: 'full_audio'
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    alert(`✅ 完整音频下载成功！\n\n保存位置: ${data.audio_file}\n\n文件大小: ${(data.file_size / 1024 / 1024).toFixed(2)} MB`);
+                } else {
+                    alert(`❌ 音频下载失败: ${data.error}`);
+                }
+            } catch (err) {
+                alert(`❌ 音频下载失败: ${err.message}`);
             }
         }
 

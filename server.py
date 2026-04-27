@@ -506,6 +506,52 @@ def extract_video_segment(video_url, start_time, end_time, output_filename):
     except Exception as e:
         raise Exception(f"Failed to extract video: {str(e)}")
 
+@app.route('/download-full-audio', methods=['POST'])
+def download_full_audio():
+    """Download full audio from YouTube video"""
+    try:
+        data = request.json
+        if not data:
+            return jsonify({'error': 'Invalid request data'}), 400
+
+        video_url = data.get('video_url', '') or ''
+        output_name = (data.get('output_name') or 'full_audio').strip()
+
+        if not video_url or not video_url.strip():
+            return jsonify({'error': 'Video URL is required'}), 400
+
+        video_url = video_url.strip()
+        desktop_path = os.path.expanduser("~/Desktop")
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_filename = os.path.join(desktop_path, f"{output_name}_{timestamp}.mp3")
+
+        # Extract full audio
+        cmd = [
+            'yt-dlp',
+            '-x',
+            '--audio-format', 'mp3',
+            '--audio-quality', '0',
+            '-o', output_filename,
+            video_url
+        ]
+
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+
+        if result.returncode != 0:
+            raise Exception(f"Failed to download audio: {result.stderr}")
+
+        # Get file size
+        file_size = os.path.getsize(output_filename)
+
+        return jsonify({
+            'success': True,
+            'audio_file': output_filename,
+            'file_size': file_size
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 if __name__ == '__main__':
     print("🚀 Starting YouTube Transcript Extractor Server...")
     print("📡 Server running at: http://localhost:8002")
