@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>YouTube 字幕提取器 - 学习版</title>
+    <title>英语学习音频字幕提取器</title>
     <style>
         * {
             margin: 0;
@@ -154,6 +154,10 @@
         }
 
         .transcript-segment {
+            align-items: center;
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 12px;
             padding: 12px;
             margin-bottom: 8px;
             border-radius: 6px;
@@ -172,6 +176,10 @@
             border-left-color: #ff6b6b;
         }
 
+        .segment-content {
+            min-width: 0;
+        }
+
         .segment-timestamp {
             color: #ff6b6b;
             font-weight: 600;
@@ -184,6 +192,35 @@
             line-height: 1.6;
         }
 
+        .segment-play-btn {
+            align-items: center;
+            background: #ff6b6b;
+            border: none;
+            border-radius: 50%;
+            color: white;
+            cursor: pointer;
+            display: flex;
+            flex-shrink: 0;
+            font-size: 14px;
+            font-weight: 700;
+            height: 36px;
+            justify-content: center;
+            width: 36px;
+        }
+
+        .segment-play-btn:hover {
+            background: #e85b5b;
+        }
+
+        .segment-play-btn:disabled {
+            background: #bdc3c7;
+            cursor: wait;
+        }
+
+        .segment-play-btn.playing {
+            background: #27ae60;
+        }
+
         .plain-transcript {
             background: white;
             padding: 20px;
@@ -193,6 +230,17 @@
             word-wrap: break-word;
             max-height: 400px;
             overflow-y: auto;
+        }
+
+        .plain-toolbar {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .plain-toolbar .copy-btn {
+            flex: 1;
+            margin-top: 0;
         }
 
         .audio-section {
@@ -384,21 +432,150 @@
             background: #f8f9fa;
             border-radius: 8px;
         }
+
+        .notebook-layout {
+            display: grid;
+            grid-template-columns: minmax(260px, 320px) 1fr;
+            gap: 20px;
+        }
+
+        .note-form,
+        .notes-list {
+            background: white;
+            border-radius: 8px;
+            padding: 18px;
+        }
+
+        .note-form h4,
+        .notes-list h4 {
+            color: #333;
+            margin-bottom: 14px;
+        }
+
+        .note-field {
+            margin-bottom: 14px;
+        }
+
+        .note-field label {
+            display: block;
+            color: #555;
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 6px;
+        }
+
+        .note-field input,
+        .note-field textarea {
+            width: 100%;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-family: inherit;
+            font-size: 14px;
+            padding: 10px;
+            resize: vertical;
+        }
+
+        .note-field input:focus,
+        .note-field textarea:focus {
+            border-color: #ff6b6b;
+            outline: none;
+        }
+
+        .note-actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .note-btn {
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            padding: 10px 14px;
+        }
+
+        .note-btn-primary {
+            background: #ff6b6b;
+            color: white;
+        }
+
+        .note-btn-secondary {
+            background: #ecf0f1;
+            color: #555;
+        }
+
+        .note-item {
+            border-left: 3px solid #ff6b6b;
+            background: #fffaf2;
+            border-radius: 8px;
+            margin-bottom: 12px;
+            padding: 14px;
+        }
+
+        .note-title {
+            color: #222;
+            font-weight: 700;
+            margin-bottom: 6px;
+        }
+
+        .note-meta {
+            color: #888;
+            font-size: 12px;
+            margin-bottom: 8px;
+        }
+
+        .note-body {
+            color: #444;
+            line-height: 1.6;
+            margin-bottom: 8px;
+            white-space: pre-wrap;
+        }
+
+        .note-context {
+            background: white;
+            border-radius: 6px;
+            color: #555;
+            font-size: 13px;
+            line-height: 1.6;
+            padding: 10px;
+            white-space: pre-wrap;
+        }
+
+        .empty-notes {
+            color: #7f8c8d;
+            line-height: 1.6;
+            padding: 20px;
+            text-align: center;
+        }
+
+        @media (max-width: 760px) {
+            .notebook-layout {
+                grid-template-columns: 1fr;
+            }
+
+            .selection-toolbar,
+            .tabs {
+                align-items: stretch;
+                flex-direction: column;
+            }
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>🎬 YouTube 字幕提取器 - 学习版</h1>
-            <p>提取字幕 + 点击任意片段提取音频进行学习</p>
+            <h1>🎬 英语学习音频字幕提取器</h1>
+            <p>YouTube / Instagram 等视频链接转字幕、音频和学习片段</p>
         </div>
 
         <div class="form-content">
             <form id="transcriptForm">
                 <div class="form-group">
-                    <label for="youtubeUrl">YouTube 链接 <span class="required">*</span></label>
-                    <input type="text" id="youtubeUrl" required placeholder="https://www.youtube.com/watch?v=...">
-                    <small>粘贴任何 YouTube 视频链接</small>
+                    <label for="youtubeUrl">视频链接 <span class="required">*</span></label>
+                    <input type="text" id="youtubeUrl" required placeholder="https://www.youtube.com/watch?v=... 或 Instagram Reel 链接">
+                    <small>支持 YouTube 字幕；Instagram 等链接会下载音频后自动转写</small>
                 </div>
 
                 <div class="form-group">
@@ -416,7 +593,7 @@
             <!-- Loading -->
             <div class="loading" id="loading">
                 <div class="spinner"></div>
-                <p>正在提取和格式化字幕...</p>
+                <p>正在提取音频/字幕并格式化学习文本...</p>
             </div>
 
             <!-- Error -->
@@ -432,6 +609,7 @@
                 <div class="tabs">
                     <button class="tab active" onclick="switchTab('timestamps')">带时间戳（学习模式）</button>
                     <button class="tab" onclick="switchTab('plain')">纯文本</button>
+                    <button class="tab" onclick="switchTab('notes')">学习笔记</button>
                 </div>
 
                 <!-- Timestamp View -->
@@ -447,6 +625,9 @@
                         <button class="download-selected-btn" id="downloadVideoBtn" onclick="downloadSelectedMedia('video')" style="background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);">
                             🎥 下载视频
                         </button>
+                        <button class="download-selected-btn" id="saveSelectionNoteBtn" onclick="prepareNoteFromSelection()" style="background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);">
+                            📝 存入笔记
+                        </button>
                     </div>
                     <div class="transcript-container" id="transcriptContainer">
                         <!-- Segments will be inserted here -->
@@ -455,11 +636,48 @@
 
                 <!-- Plain Text View -->
                 <div id="plainTab" class="tab-content">
-                    <div style="display: flex; gap: 10px; margin-bottom: 15px;">
-                        <button class="copy-btn" onclick="copyTranscript()" style="flex: 1;">📋 复制纯文本到剪贴板</button>
-                        <button class="copy-btn" onclick="downloadFullAudio()" style="flex: 1; background: linear-gradient(135deg, #ff6b6b 0%, #feca57 100%);">🎵 下载完整音频</button>
+                    <div class="plain-toolbar">
+                        <button class="copy-btn" onclick="copyTranscript()">📋 复制纯文本到剪贴板</button>
+                        <button class="copy-btn" onclick="markPlainSelectionToNotes()" style="background: #3498db;">✎ 标记到笔记</button>
+                        <button class="copy-btn" onclick="downloadFullAudio()" style="background: linear-gradient(135deg, #ff6b6b 0%, #feca57 100%);">🎵 下载完整音频</button>
                     </div>
                     <pre class="plain-transcript" id="plainTranscript"></pre>
+                </div>
+
+                <!-- Notebook View -->
+                <div id="notesTab" class="tab-content">
+                    <div class="notebook-layout">
+                        <div class="note-form">
+                            <h4>快速笔记</h4>
+                            <div class="note-field">
+                                <label for="notePhrase">单词 / 短语 / 句型</label>
+                                <input type="text" id="notePhrase" placeholder="例如: I've been meaning to...">
+                            </div>
+                            <div class="note-field">
+                                <label for="noteMeaning">意思 / 中文解释</label>
+                                <input type="text" id="noteMeaning" placeholder="一直想要做某事">
+                            </div>
+                            <div class="note-field">
+                                <label for="noteDetails">自己的理解 / 用法 / 例句</label>
+                                <textarea id="noteDetails" rows="5" placeholder="记录这个表达为什么有用、怎么用、自己的例句等"></textarea>
+                            </div>
+                            <div class="note-field">
+                                <label for="noteContext">视频原句 / 上下文</label>
+                                <textarea id="noteContext" rows="5" placeholder="可从学习模式选择片段后点击“存入笔记”自动带入"></textarea>
+                            </div>
+                            <div class="note-actions">
+                                <button class="note-btn note-btn-primary" onclick="saveNotebookNote()">保存笔记</button>
+                                <button class="note-btn note-btn-secondary" onclick="clearNoteForm()">清空</button>
+                            </div>
+                        </div>
+                        <div class="notes-list">
+                            <div style="display: flex; justify-content: space-between; gap: 10px; align-items: center; margin-bottom: 14px;">
+                                <h4 style="margin-bottom: 0;">我的学习笔记</h4>
+                                <button class="note-btn note-btn-secondary" onclick="copyNotebookNotes()">复制全部</button>
+                            </div>
+                            <div id="notesList"></div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -468,6 +686,11 @@
     <script>
         let currentData = null;
         let selectedSegments = new Set(); // Store indices of selected segments
+        let notebookNotes = loadNotebookNotes();
+        let currentPreviewAudio = null;
+        let currentPreviewButton = null;
+
+        renderNotebookNotes();
 
         document.getElementById('transcriptForm').addEventListener('submit', async function(e) {
             e.preventDefault();
@@ -490,7 +713,7 @@
             loading.classList.add('show');
 
             try {
-                const response = await fetch('http://localhost:8002/extract', {
+                const response = await fetch('/extract', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -514,15 +737,15 @@
 
                     // Show success
                     output.classList.add('show');
-                    success.innerHTML = `✅ 字幕已保存到: <strong>${data.file_path}</strong>`;
+                    success.textContent = `✅ 字幕已保存到: ${data.file_path}`;
                     success.classList.add('show');
                     output.scrollIntoView({ behavior: 'smooth' });
                 } else {
-                    error.innerHTML = `❌ ${data.error || '提取失败'}`;
+                    error.textContent = `❌ ${data.error || '提取失败'}`;
                     error.classList.add('show');
                 }
             } catch (err) {
-                error.innerHTML = `❌ 连接服务器失败: ${err.message}<br>请确保服务器正在运行`;
+                error.textContent = `❌ 连接服务器失败: ${err.message}。请确保服务器正在运行`;
                 error.classList.add('show');
             } finally {
                 submitBtn.disabled = false;
@@ -540,14 +763,104 @@
                 const div = document.createElement('div');
                 div.className = 'transcript-segment';
                 div.dataset.index = index;
-                div.innerHTML = `
-                    <div class="segment-timestamp">⏱ ${segment.timestamp}</div>
-                    <div class="segment-text">${segment.text}</div>
-                `;
+
+                const content = document.createElement('div');
+                content.className = 'segment-content';
+
+                const timestamp = document.createElement('div');
+                timestamp.className = 'segment-timestamp';
+                timestamp.textContent = `⏱ ${segment.timestamp}`;
+
+                const text = document.createElement('div');
+                text.className = 'segment-text';
+                text.textContent = segment.text;
+
+                const playButton = document.createElement('button');
+                playButton.className = 'segment-play-btn';
+                playButton.type = 'button';
+                playButton.title = '播放这个时间戳的音频';
+                playButton.textContent = '▶';
+                playButton.addEventListener('click', (event) => {
+                    event.stopPropagation();
+                    playSegmentAudio(segment, playButton);
+                });
+
+                content.appendChild(timestamp);
+                content.appendChild(text);
+                div.appendChild(content);
+                div.appendChild(playButton);
 
                 div.addEventListener('click', () => toggleSegmentSelection(segment, index, div));
                 container.appendChild(div);
             });
+        }
+
+        async function playSegmentAudio(segment, button) {
+            if (!currentData) return;
+
+            if (currentPreviewAudio) {
+                currentPreviewAudio.pause();
+                currentPreviewAudio = null;
+            }
+
+            if (currentPreviewButton) {
+                currentPreviewButton.classList.remove('playing');
+                currentPreviewButton.textContent = '▶';
+                currentPreviewButton.disabled = false;
+            }
+
+            button.disabled = true;
+            button.textContent = '...';
+
+            try {
+                const response = await fetch('/preview-audio', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        video_url: currentData.video_url,
+                        start_time: segment.start,
+                        duration: segment.duration
+                    })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || '音频播放失败');
+                }
+
+                const audio = new Audio(data.audio_url);
+                currentPreviewAudio = audio;
+                currentPreviewButton = button;
+
+                button.disabled = false;
+                button.classList.add('playing');
+                button.textContent = '❚❚';
+
+                audio.addEventListener('ended', () => {
+                    button.classList.remove('playing');
+                    button.textContent = '▶';
+                    if (currentPreviewAudio === audio) {
+                        currentPreviewAudio = null;
+                        currentPreviewButton = null;
+                    }
+                });
+
+                audio.addEventListener('error', () => {
+                    button.classList.remove('playing');
+                    button.textContent = '▶';
+                    alert('音频加载失败');
+                });
+
+                await audio.play();
+            } catch (err) {
+                button.disabled = false;
+                button.classList.remove('playing');
+                button.textContent = '▶';
+                alert(`❌ 音频播放失败: ${err.message}`);
+            }
         }
 
         function toggleSegmentSelection(segment, index, element) {
@@ -569,18 +882,21 @@
             const selectedCountEl = document.getElementById('selectedCount');
             const downloadAudioBtn = document.getElementById('downloadAudioBtn');
             const downloadVideoBtn = document.getElementById('downloadVideoBtn');
+            const saveSelectionNoteBtn = document.getElementById('saveSelectionNoteBtn');
 
-            if (!selectedCountEl || !downloadAudioBtn || !downloadVideoBtn) return;
+            if (!selectedCountEl || !downloadAudioBtn || !downloadVideoBtn || !saveSelectionNoteBtn) return;
 
             if (count > 0) {
                 selectedCountEl.textContent = `已选 ${count} 个片段`;
                 selectedCountEl.classList.add('show');
                 downloadAudioBtn.classList.add('show');
                 downloadVideoBtn.classList.add('show');
+                saveSelectionNoteBtn.classList.add('show');
             } else {
                 selectedCountEl.classList.remove('show');
                 downloadAudioBtn.classList.remove('show');
                 downloadVideoBtn.classList.remove('show');
+                saveSelectionNoteBtn.classList.remove('show');
             }
         }
 
@@ -595,7 +911,7 @@
             const mediaType = type === 'audio' ? '音频' : '视频';
 
             try {
-                const response = await fetch(`http://localhost:8002/${endpoint}`, {
+                const response = await fetch(`/${endpoint}`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -610,7 +926,7 @@
                 const data = await response.json();
 
                 if (response.ok) {
-                    const message = `✅ 成功提取 ${selectedIndices.length} 个片段的${mediaType}！\n\n`;
+                    let message = `✅ 成功提取 ${selectedIndices.length} 个片段的${mediaType}！\n\n`;
                     if (data.combined_file) {
                         message += `保存位置: ${data.combined_file}\n\n`;
                     } else {
@@ -632,7 +948,7 @@
             try {
                 alert('⏳ 开始下载完整音频，请稍候...');
 
-                const response = await fetch('http://localhost:8002/download-full-audio', {
+                const response = await fetch('/download-full-audio', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -658,11 +974,223 @@
         function switchTab(tab) {
             // Update tab buttons
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-            event.target.classList.add('active');
+            const activeButton = Array.from(document.querySelectorAll('.tab'))
+                .find(button => button.getAttribute('onclick').includes(`'${tab}'`));
+            if (activeButton) {
+                activeButton.classList.add('active');
+            }
 
             // Update tab content
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
             document.getElementById(tab + 'Tab').classList.add('active');
+        }
+
+        function getSelectedSegmentText() {
+            if (!currentData || selectedSegments.size === 0) return '';
+
+            const segments = currentData.timestamped_transcript;
+            const selectedIndices = Array.from(selectedSegments).sort((a, b) => a - b);
+            return selectedIndices.map(i => {
+                const segment = segments[i];
+                return `[${segment.timestamp}] ${segment.text}`;
+            }).join('\n');
+        }
+
+        function prepareNoteFromSelection() {
+            const context = getSelectedSegmentText();
+            if (!context) return;
+
+            document.getElementById('noteContext').value = context;
+            switchTab('notes');
+            document.getElementById('notePhrase').focus();
+        }
+
+        function getPlainTranscriptSelection() {
+            const selection = window.getSelection();
+            const selectedText = selection ? selection.toString().trim() : '';
+            const plainTranscript = document.getElementById('plainTranscript');
+
+            if (!selectedText || !plainTranscript.contains(selection.anchorNode)) {
+                return '';
+            }
+
+            return selectedText;
+        }
+
+        function markPlainSelectionToNotes() {
+            const selectedText = getPlainTranscriptSelection();
+            if (!selectedText) {
+                alert('请先在纯文本里选中想标记的内容');
+                return;
+            }
+
+            notebookNotes.unshift({
+                id: Date.now().toString(),
+                phrase: selectedText,
+                meaning: '',
+                details: '',
+                context: '',
+                sourceUrl: currentData ? currentData.video_url : '',
+                savedAt: new Date().toLocaleString()
+            });
+
+            persistNotebookNotes();
+            renderNotebookNotes();
+            switchTab('notes');
+        }
+
+        function loadNotebookNotes() {
+            try {
+                return JSON.parse(localStorage.getItem('englishLearningNotebook') || '[]');
+            } catch (err) {
+                return [];
+            }
+        }
+
+        function persistNotebookNotes() {
+            localStorage.setItem('englishLearningNotebook', JSON.stringify(notebookNotes));
+        }
+
+        function saveNotebookNote() {
+            const phrase = document.getElementById('notePhrase').value.trim();
+            const meaning = document.getElementById('noteMeaning').value.trim();
+            const details = document.getElementById('noteDetails').value.trim();
+            const context = document.getElementById('noteContext').value.trim();
+
+            if (!phrase && !meaning && !details && !context) {
+                alert('先写一点笔记内容再保存');
+                return;
+            }
+
+            notebookNotes.unshift({
+                id: Date.now().toString(),
+                phrase,
+                meaning,
+                details,
+                context,
+                sourceUrl: currentData ? currentData.video_url : '',
+                savedAt: new Date().toLocaleString()
+            });
+
+            persistNotebookNotes();
+            renderNotebookNotes();
+            clearNoteForm();
+        }
+
+        function clearNoteForm() {
+            document.getElementById('notePhrase').value = '';
+            document.getElementById('noteMeaning').value = '';
+            document.getElementById('noteDetails').value = '';
+            document.getElementById('noteContext').value = '';
+        }
+
+        function renderNotebookNotes() {
+            const list = document.getElementById('notesList');
+            if (!list) return;
+
+            list.innerHTML = '';
+
+            if (notebookNotes.length === 0) {
+                const empty = document.createElement('div');
+                empty.className = 'empty-notes';
+                empty.textContent = '还没有笔记。选择字幕片段后点“存入笔记”，或直接记录一个好词好句。';
+                list.appendChild(empty);
+                return;
+            }
+
+            notebookNotes.forEach(note => {
+                const item = document.createElement('div');
+                item.className = 'note-item';
+
+                const title = document.createElement('div');
+                title.className = 'note-title';
+                title.textContent = note.phrase || note.meaning || '未命名笔记';
+                item.appendChild(title);
+
+                const meta = document.createElement('div');
+                meta.className = 'note-meta';
+                meta.textContent = note.savedAt || '';
+                item.appendChild(meta);
+
+                if (note.meaning) {
+                    const meaning = document.createElement('div');
+                    meaning.className = 'note-body';
+                    meaning.textContent = `意思：${note.meaning}`;
+                    item.appendChild(meaning);
+                }
+
+                if (note.details) {
+                    const details = document.createElement('div');
+                    details.className = 'note-body';
+                    details.textContent = note.details;
+                    item.appendChild(details);
+                }
+
+                if (note.context) {
+                    const context = document.createElement('div');
+                    context.className = 'note-context';
+                    context.textContent = note.context;
+                    item.appendChild(context);
+                }
+
+                const actions = document.createElement('div');
+                actions.className = 'note-actions';
+                actions.style.marginTop = '10px';
+
+                const copyBtn = document.createElement('button');
+                copyBtn.className = 'note-btn note-btn-secondary';
+                copyBtn.textContent = '复制';
+                copyBtn.addEventListener('click', () => copySingleNote(note));
+
+                const deleteBtn = document.createElement('button');
+                deleteBtn.className = 'note-btn note-btn-secondary';
+                deleteBtn.textContent = '删除';
+                deleteBtn.addEventListener('click', () => deleteNotebookNote(note.id));
+
+                actions.appendChild(copyBtn);
+                actions.appendChild(deleteBtn);
+                item.appendChild(actions);
+
+                list.appendChild(item);
+            });
+        }
+
+        function formatNoteForCopy(note) {
+            const parts = [];
+            if (note.phrase) parts.push(`Phrase: ${note.phrase}`);
+            if (note.meaning) parts.push(`Meaning: ${note.meaning}`);
+            if (note.details) parts.push(`Notes: ${note.details}`);
+            if (note.context) parts.push(`Context:\n${note.context}`);
+            if (note.sourceUrl) parts.push(`Source: ${note.sourceUrl}`);
+            return parts.join('\n');
+        }
+
+        function copySingleNote(note) {
+            navigator.clipboard.writeText(formatNoteForCopy(note)).then(() => {
+                alert('笔记已复制');
+            }).catch(() => {
+                alert('复制失败，请手动复制');
+            });
+        }
+
+        function copyNotebookNotes() {
+            if (notebookNotes.length === 0) {
+                alert('还没有笔记可以复制');
+                return;
+            }
+
+            const text = notebookNotes.map(formatNoteForCopy).join('\n\n---\n\n');
+            navigator.clipboard.writeText(text).then(() => {
+                alert('全部笔记已复制');
+            }).catch(() => {
+                alert('复制失败，请手动复制');
+            });
+        }
+
+        function deleteNotebookNote(id) {
+            notebookNotes = notebookNotes.filter(note => note.id !== id);
+            persistNotebookNotes();
+            renderNotebookNotes();
         }
 
         function clearForm() {
