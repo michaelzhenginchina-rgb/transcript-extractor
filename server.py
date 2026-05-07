@@ -11,9 +11,15 @@ import os
 import re
 import json
 import urllib.request
+import urllib.parse
 import subprocess
+import tempfile
+import shutil
+import zipfile
+from collections import Counter
 from datetime import datetime
 from dotenv import load_dotenv
+from werkzeug.utils import secure_filename
 
 # Load environment variables from .env file
 load_dotenv()
@@ -25,6 +31,11 @@ app = Flask(__name__)
 CORS(app)
 
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
+WHISPER_MODEL = os.getenv('WHISPER_MODEL', os.path.expanduser('~/.cache/whisper-cpp/ggml-small.bin'))
+WHISPER_CLI = os.getenv('WHISPER_CLI') or shutil.which('whisper-cli') or '/opt/homebrew/bin/whisper-cli'
+FFMPEG = os.getenv('FFMPEG') or shutil.which('ffmpeg') or '/opt/homebrew/bin/ffmpeg'
+MEDIA_EXTENSIONS = {'.mp3', '.wav', '.flac', '.ogg', '.mp4', '.mov', '.m4a', '.aac', '.webm'}
+DIRECT_AUDIO_EXTENSIONS = {'.mp3', '.wav', '.flac', '.ogg'}
 
 def extract_video_id(url):
     """Extract video ID from YouTube URL (including short URLs)"""
@@ -117,6 +128,350 @@ def format_with_openai(transcript_text):
         raise Exception(f"OpenAI API error: {e.code} - {e.reason}")
     except Exception as e:
         raise Exception(f"Formatting failed: {str(e)}")
+
+def clean_transcript_text(text):
+    """Remove timestamp noise and make Whisper output more readable."""
+    text = re.sub(r'\[[^\]]+\]', ' ', text)
+    text = re.sub(r'\s+', ' ', text).strip()
+    if not text:
+        return ''
+
+    sentences = re.split(r'(?<=[.!?])\s+', text)
+    return '\n\n'.join(sentence.strip() for sentence in sentences if sentence.strip())
+
+def fallback_keywords(transcript_text):
+    """Simple local keyword fallback if AI enrichment is unavailable."""
+    stopwords = {
+        'about', 'after', 'again', 'also', 'because', 'before', 'being', 'could',
+        'first', 'from', 'have', 'into', 'just', 'like', 'more', 'most', 'only',
+        'other', 'really', 'should', 'some', 'that', 'their', 'there', 'these',
+        'they', 'this', 'those', 'through', 'very', 'want', 'well', 'were',
+        'what', 'when', 'where', 'which', 'with', 'would', 'your', 'you', 'the',
+        'and', 'for', 'but', 'are', 'was', 'can', 'did', 'how', 'who', 'why',
+        'yes', 'not', 'all', 'had', 'has', 'his', 'her'
+    }
+    words = re.findall(r"[A-Za-z][A-Za-z'-]{3,}", transcript_text.lower())
+    counts = Counter(word for word in words if word not in stopwords)
+    return [
+        {
+            'term': word,
+            'meaning': '中文释义待补充',
+            'note': 'Useful word from the transcript'
+        }
+        for word, _ in counts.most_common(18)
+    ]
+
+def prepare_uploaded_audio(input_path, work_dir):
+    """Return an audio file path Whisper can process. Converts video to wav."""
+    ext = os.path.splitext(input_path)[1].lower()
+    if ext in DIRECT_AUDIO_EXTENSIONS:
+        return input_path
+    if ext not in MEDIA_EXTENSIONS:
+        raise Exception(f"Unsupported file type: {ext or 'unknown'}")
+
+    wav_path = os.path.join(work_dir, 'audio.wav')
+    cmd = [
+        FFMPEG,
+        '-y',
+        '-i', input_path,
+        '-vn',
+        '-acodec', 'pcm_s16le',
+        '-ar', '16000',
+        '-ac', '1',
+        wav_path
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise Exception(f"Could not extract audio with ffmpeg: {result.stderr[-1200:]}")
+    return wav_path
+
+def transcribe_uploaded_media(input_path, output_base):
+    """Transcribe uploaded audio/video using local whisper-cli."""
+    if not os.path.exists(WHISPER_MODEL):
+        raise Exception(f"Whisper model not found: {WHISPER_MODEL}")
+
+    with tempfile.TemporaryDirectory() as work_dir:
+        audio_path = prepare_uploaded_audio(input_path, work_dir)
+        cmd = [
+            WHISPER_CLI,
+            '-m', WHISPER_MODEL,
+            '-f', audio_path,
+            '-l', 'en',
+            '-otxt',
+            '-oj',
+            '-of', output_base,
+            '-nt',
+            '--no-gpu'
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise Exception(f"Whisper transcription failed: {result.stderr[-1600:]}")
+
+    txt_path = f"{output_base}.txt"
+    if not os.path.exists(txt_path):
+        raise Exception("Whisper finished, but no transcript text file was created.")
+
+    with open(txt_path, 'r', encoding='utf-8', errors='replace') as f:
+        return clean_transcript_text(f.read())
+
+def create_learning_material_with_openai(transcript_text, title):
+    """Create Chinese translation, keywords, sentence patterns, and notes."""
+    if not OPENAI_API_KEY:
+        return {
+            'ai_available': False,
+            'chinese_translation': '未配置 OpenAI API Key，因此暂时只生成英文 transcript。',
+            'keywords': fallback_keywords(transcript_text),
+            'sentence_patterns': [],
+            'student_notes': [
+                '先不看原文听一遍，记录你能听懂的信息。',
+                '第二遍重点记录人物、地点、时间、原因和感受。',
+                '最后对照 transcript 检查遗漏信息。'
+            ]
+        }
+
+    url = "https://api.openai.com/v1/chat/completions"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {OPENAI_API_KEY}"
+    }
+    data = {
+        "model": "gpt-4o-mini",
+        "messages": [
+            {
+                "role": "system",
+                "content": "You create concise English-Chinese learning materials for Chinese IELTS/English students. Return valid JSON only."
+            },
+            {
+                "role": "user",
+                "content": f"""Create learning material from this English transcript.
+
+Return JSON only with this structure:
+{{
+  "chinese_translation": "complete natural Chinese translation",
+  "keywords": [
+    {{"term": "English word or phrase", "meaning": "Chinese meaning", "note": "short learning note"}}
+  ],
+  "sentence_patterns": ["useful sentence pattern"],
+  "student_notes": ["short practical note in Chinese or simple English"]
+}}
+
+Title: {title}
+
+Transcript:
+{transcript_text}"""
+            }
+        ],
+        "temperature": 0.2,
+        "max_tokens": 4000
+    }
+
+    try:
+        req = urllib.request.Request(url, data=json.dumps(data).encode('utf-8'), headers=headers)
+        with urllib.request.urlopen(req, timeout=180) as response:
+            result = json.loads(response.read().decode('utf-8'))
+            content = result['choices'][0]['message']['content'].strip()
+            content = re.sub(r'^```json\s*|\s*```$', '', content, flags=re.I | re.S).strip()
+            learning = json.loads(content)
+            learning['ai_available'] = True
+            return learning
+    except Exception as e:
+        return {
+            'ai_available': False,
+            'chinese_translation': f'AI 生成失败：{str(e)}',
+            'keywords': fallback_keywords(transcript_text),
+            'sentence_patterns': [],
+            'student_notes': ['Transcript 已生成，但中文翻译和关键词需要重新生成或手动检查。']
+        }
+
+def render_learning_markdown(title, transcript_text, learning):
+    """Save a readable Markdown study file."""
+    lines = [
+        f"# {title}",
+        "",
+        "## English Transcript",
+        "",
+        transcript_text,
+        "",
+        "## Chinese Translation",
+        "",
+        learning.get('chinese_translation', ''),
+        "",
+        "## Keywords and Useful Phrases",
+        ""
+    ]
+    for item in learning.get('keywords', []):
+        term = item.get('term', '')
+        meaning = item.get('meaning', '')
+        note = item.get('note', '')
+        note_text = f" ({note})" if note else ""
+        lines.append(f"- **{term}** - {meaning}{note_text}")
+
+    patterns = learning.get('sentence_patterns', [])
+    if patterns:
+        lines.extend(["", "## Useful Sentence Patterns", ""])
+        lines.extend([f"- {pattern}" for pattern in patterns])
+
+    notes = learning.get('student_notes', [])
+    if notes:
+        lines.extend(["", "## Student Notes", ""])
+        lines.extend([f"{index}. {note}" for index, note in enumerate(notes, 1)])
+
+    return "\n".join(lines).strip() + "\n"
+
+def xml_escape(value):
+    """Escape text for Word XML."""
+    return (
+        str(value or '')
+        .replace('&', '&amp;')
+        .replace('<', '&lt;')
+        .replace('>', '&gt;')
+        .replace('"', '&quot;')
+    )
+
+def docx_paragraph(text='', style=None, bold_prefix=None):
+    """Create a simple Word paragraph XML string."""
+    style_xml = f'<w:pStyle w:val="{style}"/>' if style else ''
+    ppr = f'<w:pPr>{style_xml}</w:pPr>' if style_xml else ''
+
+    if bold_prefix and str(text).startswith(bold_prefix):
+        rest = str(text)[len(bold_prefix):]
+        runs = (
+            f'<w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">{xml_escape(bold_prefix)}</w:t></w:r>'
+            f'<w:r><w:t xml:space="preserve">{xml_escape(rest)}</w:t></w:r>'
+        )
+    else:
+        runs = f'<w:r><w:t xml:space="preserve">{xml_escape(text)}</w:t></w:r>' if text else ''
+
+    return f'<w:p>{ppr}{runs}</w:p>'
+
+def docx_table(rows):
+    """Create a simple full-width two-column Word table."""
+    row_xml = []
+    for left, right in rows:
+        row_xml.append(
+            '<w:tr>'
+            '<w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr>'
+            f'{docx_paragraph(left)}</w:tc>'
+            '<w:tc><w:tcPr><w:tcW w:w="6360" w:type="dxa"/></w:tcPr>'
+            f'{docx_paragraph(right)}</w:tc>'
+            '</w:tr>'
+        )
+    return (
+        '<w:tbl>'
+        '<w:tblPr><w:tblW w:w="9360" w:type="dxa"/>'
+        '<w:tblBorders>'
+        '<w:top w:val="single" w:sz="4" w:space="0" w:color="D9E2EC"/>'
+        '<w:left w:val="single" w:sz="4" w:space="0" w:color="D9E2EC"/>'
+        '<w:bottom w:val="single" w:sz="4" w:space="0" w:color="D9E2EC"/>'
+        '<w:right w:val="single" w:sz="4" w:space="0" w:color="D9E2EC"/>'
+        '<w:insideH w:val="single" w:sz="4" w:space="0" w:color="D9E2EC"/>'
+        '<w:insideV w:val="single" w:sz="4" w:space="0" w:color="D9E2EC"/>'
+        '</w:tblBorders></w:tblPr>'
+        '<w:tblGrid><w:gridCol w:w="3000"/><w:gridCol w:w="6360"/></w:tblGrid>'
+        + ''.join(row_xml)
+        + '</w:tbl>'
+    )
+
+def create_learning_docx(title, transcript_text, learning, docx_path):
+    """Create a Word document containing the generated learning material."""
+    body_parts = [
+        docx_paragraph(title, 'Title'),
+        docx_paragraph('English Transcript', 'Heading1'),
+    ]
+
+    for paragraph in transcript_text.split('\n\n'):
+        body_parts.append(docx_paragraph(paragraph.strip()))
+
+    body_parts.append(docx_paragraph('Chinese Translation', 'Heading1'))
+    for paragraph in str(learning.get('chinese_translation', '')).split('\n'):
+        if paragraph.strip():
+            body_parts.append(docx_paragraph(paragraph.strip()))
+
+    body_parts.append(docx_paragraph('Keywords and Useful Phrases', 'Heading1'))
+    keyword_rows = [('English', 'Chinese / Notes')]
+    for item in learning.get('keywords', []):
+        term = item.get('term', '')
+        meaning = item.get('meaning', '')
+        note = item.get('note', '')
+        right = meaning + (f'\n{note}' if note else '')
+        keyword_rows.append((term, right))
+    body_parts.append(docx_table(keyword_rows))
+
+    patterns = learning.get('sentence_patterns', [])
+    if patterns:
+        body_parts.append(docx_paragraph('Useful Sentence Patterns', 'Heading1'))
+        for pattern in patterns:
+            body_parts.append(docx_paragraph(pattern, 'ListParagraph'))
+
+    notes = learning.get('student_notes', [])
+    if notes:
+        body_parts.append(docx_paragraph('Student Notes', 'Heading1'))
+        for index, note in enumerate(notes, 1):
+            body_parts.append(docx_paragraph(f'{index}. {note}'))
+
+    document_xml = f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    {''.join(body_parts)}
+    <w:sectPr>
+      <w:pgSz w:w="12240" w:h="15840"/>
+      <w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/>
+    </w:sectPr>
+  </w:body>
+</w:document>'''
+
+    styles_xml = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:style w:type="paragraph" w:default="1" w:styleId="Normal">
+    <w:name w:val="Normal"/>
+    <w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:eastAsia="Microsoft YaHei"/><w:sz w:val="24"/></w:rPr>
+    <w:pPr><w:spacing w:after="120" w:line="276" w:lineRule="auto"/></w:pPr>
+  </w:style>
+  <w:style w:type="paragraph" w:styleId="Title">
+    <w:name w:val="Title"/>
+    <w:rPr><w:b/><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:eastAsia="Microsoft YaHei"/><w:sz w:val="40"/></w:rPr>
+    <w:pPr><w:spacing w:after="240"/></w:pPr>
+  </w:style>
+  <w:style w:type="paragraph" w:styleId="Heading1">
+    <w:name w:val="heading 1"/>
+    <w:basedOn w:val="Normal"/>
+    <w:next w:val="Normal"/>
+    <w:rPr><w:b/><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:eastAsia="Microsoft YaHei"/><w:sz w:val="32"/></w:rPr>
+    <w:pPr><w:spacing w:before="240" w:after="120"/></w:pPr>
+  </w:style>
+  <w:style w:type="paragraph" w:styleId="ListParagraph">
+    <w:name w:val="List Paragraph"/>
+    <w:basedOn w:val="Normal"/>
+    <w:pPr><w:ind w:left="720"/></w:pPr>
+  </w:style>
+</w:styles>'''
+
+    content_types = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+  <Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>
+</Types>'''
+
+    root_rels = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>'''
+
+    doc_rels = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>'''
+
+    with zipfile.ZipFile(docx_path, 'w', zipfile.ZIP_DEFLATED) as docx:
+        docx.writestr('[Content_Types].xml', content_types)
+        docx.writestr('_rels/.rels', root_rels)
+        docx.writestr('word/document.xml', document_xml)
+        docx.writestr('word/styles.xml', styles_xml)
+        docx.writestr('word/_rels/document.xml.rels', doc_rels)
+
+def generated_file_url(path):
+    """Return a local download URL for generated study files."""
+    return f"/download-generated?path={urllib.parse.quote(path)}"
 
 def format_timestamp(seconds):
     """Convert seconds to MM:SS format"""
@@ -237,6 +592,154 @@ def extract():
 def health():
     """Health check endpoint"""
     return jsonify({'status': 'healthy'})
+
+@app.route('/download-generated', methods=['GET'])
+def download_generated():
+    """Download generated study files from the local output folder."""
+    try:
+        path = request.args.get('path', '')
+        if not path:
+            return jsonify({'error': 'File path is required'}), 400
+
+        output_dir = os.path.realpath(os.path.join(os.path.expanduser("~/Desktop"), "字幕提取-学习材料"))
+        requested_path = os.path.realpath(path)
+
+        if not requested_path.startswith(output_dir + os.sep):
+            return jsonify({'error': 'This file is outside the generated learning-material folder'}), 403
+        if not os.path.exists(requested_path):
+            return jsonify({'error': 'File not found'}), 404
+
+        return send_file(requested_path, as_attachment=True)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/generate-learning-material', methods=['POST'])
+def generate_learning_material():
+    """Upload local audio/video and generate transcript + learning notes."""
+    try:
+        if 'media' not in request.files:
+            return jsonify({'error': 'Please upload an audio or video file'}), 400
+
+        media_file = request.files['media']
+        if not media_file or not media_file.filename:
+            return jsonify({'error': 'Please choose a file'}), 400
+
+        original_filename = secure_filename(media_file.filename) or 'uploaded_media'
+        ext = os.path.splitext(original_filename)[1].lower()
+        if ext not in MEDIA_EXTENSIONS:
+            return jsonify({'error': f'Unsupported file type: {ext}. Please use mp3, mp4, wav, mov, m4a, flac, ogg, aac, or webm.'}), 400
+
+        title = (request.form.get('title') or '').strip()
+        if not title:
+            title = os.path.splitext(original_filename)[0].replace('_', ' ').replace('-', ' ').strip() or 'Learning Material'
+
+        desktop_path = os.path.expanduser("~/Desktop")
+        output_dir = os.path.join(desktop_path, "字幕提取-学习材料")
+        upload_dir = os.path.join(output_dir, "uploads")
+        os.makedirs(upload_dir, exist_ok=True)
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        safe_title = re.sub(r'[^\w\s-]', '', title).strip().replace(' ', '_') or 'learning_material'
+        saved_media_path = os.path.join(upload_dir, f"{safe_title}_{timestamp}{ext}")
+        media_file.save(saved_media_path)
+
+        output_base = os.path.join(output_dir, f"{safe_title}_{timestamp}_raw")
+        transcript_text = transcribe_uploaded_media(saved_media_path, output_base)
+        learning = create_learning_material_with_openai(transcript_text, title)
+
+        markdown = render_learning_markdown(title, transcript_text, learning)
+        markdown_path = os.path.join(output_dir, f"{safe_title}_{timestamp}_study_notes.md")
+        json_path = os.path.join(output_dir, f"{safe_title}_{timestamp}_study_notes.json")
+        docx_path = os.path.join(output_dir, f"{safe_title}_{timestamp}_study_notes.docx")
+
+        with open(markdown_path, 'w', encoding='utf-8') as f:
+            f.write(markdown)
+        with open(json_path, 'w', encoding='utf-8') as f:
+            json.dump({
+                'title': title,
+                'source_file': saved_media_path,
+                'transcript': transcript_text,
+                'learning': learning,
+                'created_at': datetime.now().isoformat()
+            }, f, indent=2, ensure_ascii=False)
+        create_learning_docx(title, transcript_text, learning, docx_path)
+
+        return jsonify({
+            'success': True,
+            'title': title,
+            'transcript': transcript_text,
+            'chinese_translation': learning.get('chinese_translation', ''),
+            'keywords': learning.get('keywords', []),
+            'sentence_patterns': learning.get('sentence_patterns', []),
+            'student_notes': learning.get('student_notes', []),
+            'ai_available': learning.get('ai_available', False),
+            'source_file': saved_media_path,
+            'markdown_file': markdown_path,
+            'json_file': json_path,
+            'docx_file': docx_path,
+            'docx_download_url': generated_file_url(docx_path)
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/generate-learning-from-transcript', methods=['POST'])
+def generate_learning_from_transcript():
+    """Generate learning notes from an already extracted YouTube transcript."""
+    try:
+        data = request.json
+        if not data:
+            return jsonify({'error': 'Invalid request data'}), 400
+
+        transcript_text = (data.get('transcript') or '').strip()
+        title = (data.get('title') or data.get('filename') or 'YouTube Learning Material').strip()
+
+        if not transcript_text:
+            return jsonify({'error': 'Transcript is required'}), 400
+
+        desktop_path = os.path.expanduser("~/Desktop")
+        output_dir = os.path.join(desktop_path, "字幕提取-学习材料")
+        os.makedirs(output_dir, exist_ok=True)
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        safe_title = re.sub(r'[^\w\s-]', '', title).strip().replace(' ', '_') or 'youtube_learning_material'
+
+        learning = create_learning_material_with_openai(transcript_text, title)
+        markdown = render_learning_markdown(title, transcript_text, learning)
+
+        markdown_path = os.path.join(output_dir, f"{safe_title}_{timestamp}_study_notes.md")
+        json_path = os.path.join(output_dir, f"{safe_title}_{timestamp}_study_notes.json")
+        docx_path = os.path.join(output_dir, f"{safe_title}_{timestamp}_study_notes.docx")
+
+        with open(markdown_path, 'w', encoding='utf-8') as f:
+            f.write(markdown)
+        with open(json_path, 'w', encoding='utf-8') as f:
+            json.dump({
+                'title': title,
+                'source': 'youtube_transcript',
+                'transcript': transcript_text,
+                'learning': learning,
+                'created_at': datetime.now().isoformat()
+            }, f, indent=2, ensure_ascii=False)
+        create_learning_docx(title, transcript_text, learning, docx_path)
+
+        return jsonify({
+            'success': True,
+            'title': title,
+            'transcript': transcript_text,
+            'chinese_translation': learning.get('chinese_translation', ''),
+            'keywords': learning.get('keywords', []),
+            'sentence_patterns': learning.get('sentence_patterns', []),
+            'student_notes': learning.get('student_notes', []),
+            'ai_available': learning.get('ai_available', False),
+            'markdown_file': markdown_path,
+            'json_file': json_path,
+            'docx_file': docx_path,
+            'docx_download_url': generated_file_url(docx_path)
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/extract-audio', methods=['POST'])
 def extract_audio():

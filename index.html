@@ -64,7 +64,8 @@
             color: #e74c3c;
         }
 
-        .form-group input[type="text"] {
+        .form-group input[type="text"],
+        .form-group input[type="file"] {
             width: 100%;
             padding: 12px;
             border: 2px solid #e0e0e0;
@@ -384,6 +385,124 @@
             background: #f8f9fa;
             border-radius: 8px;
         }
+
+        .youtube-actions {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            margin: 14px 0 20px;
+            padding: 14px;
+            background: #e8f5e9;
+            border-radius: 8px;
+            border: 1px solid #c8e6c9;
+        }
+
+        .youtube-actions span {
+            flex: 1;
+            color: #2e7d32;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+
+        .learning-btn {
+            padding: 12px 18px;
+            border: none;
+            border-radius: 8px;
+            background: linear-gradient(135deg, #27ae60 0%, #229954 100%);
+            color: white;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+
+        .learning-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 5px 16px rgba(39, 174, 96, 0.28);
+        }
+
+        .tool-section {
+            border: 2px solid #f1f2f6;
+            border-radius: 10px;
+            padding: 22px;
+            margin-bottom: 24px;
+        }
+
+        .tool-section h2 {
+            color: #333;
+            font-size: 20px;
+            margin-bottom: 8px;
+        }
+
+        .tool-section .section-note {
+            color: #7f8c8d;
+            font-size: 13px;
+            margin-bottom: 18px;
+            line-height: 1.6;
+        }
+
+        .learning-output {
+            margin-top: 24px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            display: none;
+        }
+
+        .learning-output.show {
+            display: block;
+        }
+
+        .learning-card {
+            background: white;
+            border-radius: 8px;
+            padding: 18px;
+            margin-top: 12px;
+            line-height: 1.8;
+            white-space: pre-wrap;
+            max-height: 420px;
+            overflow-y: auto;
+        }
+
+        .keyword-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+            margin-top: 12px;
+        }
+
+        .keyword-card {
+            background: #e8f5e9;
+            border-radius: 8px;
+            padding: 12px;
+            line-height: 1.5;
+        }
+
+        .keyword-card strong {
+            display: block;
+            color: #2e7d32;
+            margin-bottom: 4px;
+        }
+
+        .keyword-card span {
+            display: block;
+            color: #7f8c8d;
+            margin-top: 5px;
+            font-size: 13px;
+        }
+
+        @media (max-width: 720px) {
+            .keyword-grid {
+                grid-template-columns: 1fr;
+            }
+            .youtube-actions {
+                display: block;
+            }
+            .learning-btn {
+                width: 100%;
+                margin-top: 10px;
+            }
+        }
     </style>
 </head>
 <body>
@@ -394,6 +513,10 @@
         </div>
 
         <div class="form-content">
+            <section class="tool-section">
+                <h2>YouTube 字幕提取</h2>
+                <p class="section-note">输入 YouTube 链接，先提取字幕；字幕出来后，可以继续用同一份字幕生成学习资料。</p>
+
             <form id="transcriptForm">
                 <div class="form-group">
                     <label for="youtubeUrl">YouTube 链接 <span class="required">*</span></label>
@@ -412,6 +535,7 @@
                     <button type="submit" class="btn btn-primary" id="submitBtn">提取字幕</button>
                 </div>
             </form>
+            </section>
 
             <!-- Loading -->
             <div class="loading" id="loading">
@@ -428,6 +552,10 @@
             <!-- Output -->
             <div class="output" id="output">
                 <h3>✅ 字幕已提取</h3>
+                <div class="youtube-actions">
+                    <span>这份 YouTube 字幕可以直接继续生成中文翻译、关键词、句型和学习建议。</span>
+                    <button class="learning-btn" onclick="generateLearningFromYoutube()">生成学习资料</button>
+                </div>
 
                 <div class="tabs">
                     <button class="tab active" onclick="switchTab('timestamps')">带时间戳（学习模式）</button>
@@ -458,10 +586,91 @@
                     <div style="display: flex; gap: 10px; margin-bottom: 15px;">
                         <button class="copy-btn" onclick="copyTranscript()" style="flex: 1;">📋 复制纯文本到剪贴板</button>
                         <button class="copy-btn" onclick="downloadFullAudio()" style="flex: 1; background: linear-gradient(135deg, #ff6b6b 0%, #feca57 100%);">🎵 下载完整音频</button>
+                        <button class="copy-btn" onclick="generateLearningFromYoutube()" style="flex: 1; background: linear-gradient(135deg, #27ae60 0%, #229954 100%);">📚 生成学习资料</button>
                     </div>
                     <pre class="plain-transcript" id="plainTranscript"></pre>
                 </div>
             </div>
+
+            <div class="loading" id="youtubeLearningLoading">
+                <div class="spinner"></div>
+                <p>正在根据 YouTube 字幕生成学习资料...</p>
+            </div>
+
+            <div class="error" id="youtubeLearningError"></div>
+            <div class="success" id="youtubeLearningSuccess"></div>
+
+            <div class="learning-output" id="youtubeLearningOutput">
+                <h3>✅ YouTube 学习资料已生成</h3>
+                <div class="tabs">
+                    <button class="tab active" onclick="switchYoutubeLearningTab(event, 'youtubeLearningChinese')">中文翻译</button>
+                    <button class="tab" onclick="switchYoutubeLearningTab(event, 'youtubeLearningKeywords')">关键词</button>
+                    <button class="tab" onclick="switchYoutubeLearningTab(event, 'youtubeLearningNotes')">学习建议</button>
+                </div>
+                <div id="youtubeLearningChineseTab" class="tab-content active">
+                    <div class="learning-card" id="youtubeLearningChineseText"></div>
+                </div>
+                <div id="youtubeLearningKeywordsTab" class="tab-content">
+                    <div class="keyword-grid" id="youtubeLearningKeywordGrid"></div>
+                </div>
+                <div id="youtubeLearningNotesTab" class="tab-content">
+                    <div class="learning-card" id="youtubeLearningNotesText"></div>
+                </div>
+            </div>
+
+            <section class="tool-section">
+                <h2>上传音频 / 视频生成学习材料</h2>
+                <p class="section-note">没有 YouTube 字幕时使用这里。上传 mp3、mp4、wav、mov 等文件，先本地转写，再生成学习资料。</p>
+
+                <form id="learningForm">
+                    <div class="form-group">
+                        <label for="lessonTitle">课程标题（可选）</label>
+                        <input type="text" id="lessonTitle" placeholder="例如: MINDSET Foundation 07">
+                        <small>留空则使用文件名</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="mediaFile">音频 / 视频文件 <span class="required">*</span></label>
+                        <input type="file" id="mediaFile" required accept=".mp3,.wav,.flac,.ogg,.mp4,.mov,.m4a,.aac,.webm,audio/*,video/*">
+                        <small>本地处理：先用 Whisper 转写，再生成学习材料</small>
+                    </div>
+
+                    <div class="buttons">
+                        <button type="button" class="btn btn-secondary" onclick="clearLearningForm()">清空</button>
+                        <button type="submit" class="btn btn-primary" id="learningSubmitBtn">生成学习材料</button>
+                    </div>
+                </form>
+
+                <div class="loading" id="learningLoading">
+                    <div class="spinner"></div>
+                    <p>正在转写音频并生成学习材料，时间取决于音频长度...</p>
+                </div>
+
+                <div class="error" id="learningError"></div>
+                <div class="success" id="learningSuccess"></div>
+
+                <div class="learning-output" id="learningOutput">
+                    <h3>✅ 学习材料已生成</h3>
+                    <div class="tabs">
+                        <button class="tab active" onclick="switchLearningTab(event, 'learningTranscript')">英文原文</button>
+                        <button class="tab" onclick="switchLearningTab(event, 'learningChinese')">中文翻译</button>
+                        <button class="tab" onclick="switchLearningTab(event, 'learningKeywords')">关键词</button>
+                        <button class="tab" onclick="switchLearningTab(event, 'learningNotes')">学习建议</button>
+                    </div>
+                    <div id="learningTranscriptTab" class="tab-content active">
+                        <div class="learning-card" id="learningTranscriptText"></div>
+                    </div>
+                    <div id="learningChineseTab" class="tab-content">
+                        <div class="learning-card" id="learningChineseText"></div>
+                    </div>
+                    <div id="learningKeywordsTab" class="tab-content">
+                        <div class="keyword-grid" id="learningKeywordGrid"></div>
+                    </div>
+                    <div id="learningNotesTab" class="tab-content">
+                        <div class="learning-card" id="learningNotesText"></div>
+                    </div>
+                </div>
+            </section>
         </div>
     </div>
 
@@ -529,6 +738,202 @@
                 loading.classList.remove('show');
             }
         });
+
+        document.getElementById('learningForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+
+            const lessonTitle = document.getElementById('lessonTitle').value.trim();
+            const mediaFile = document.getElementById('mediaFile').files[0];
+            const submitBtn = document.getElementById('learningSubmitBtn');
+            const loading = document.getElementById('learningLoading');
+            const output = document.getElementById('learningOutput');
+            const error = document.getElementById('learningError');
+            const success = document.getElementById('learningSuccess');
+
+            output.classList.remove('show');
+            error.classList.remove('show');
+            success.classList.remove('show');
+
+            if (!mediaFile) {
+                error.innerHTML = '❌ 请选择一个音频或视频文件';
+                error.classList.add('show');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('title', lessonTitle);
+            formData.append('media', mediaFile);
+
+            submitBtn.disabled = true;
+            loading.classList.add('show');
+
+            try {
+                const response = await fetch('http://localhost:8002/generate-learning-material', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    displayLearningMaterial(data);
+                    success.innerHTML = `✅ 学习材料已保存到: <strong>${data.markdown_file}</strong><br><a href="http://localhost:8002${data.docx_download_url}" target="_blank">下载 Word DOCX 版本</a>`;
+                    success.classList.add('show');
+                    output.classList.add('show');
+                    output.scrollIntoView({ behavior: 'smooth' });
+                } else {
+                    error.innerHTML = `❌ ${data.error || '生成失败'}`;
+                    error.classList.add('show');
+                }
+            } catch (err) {
+                error.innerHTML = `❌ 连接服务器失败: ${err.message}<br>请确保服务器正在运行`;
+                error.classList.add('show');
+            } finally {
+                submitBtn.disabled = false;
+                loading.classList.remove('show');
+            }
+        });
+
+        function displayLearningMaterial(data) {
+            document.getElementById('learningTranscriptText').textContent = data.transcript || '';
+            document.getElementById('learningChineseText').textContent = data.chinese_translation || '';
+
+            const keywordGrid = document.getElementById('learningKeywordGrid');
+            keywordGrid.innerHTML = '';
+            (data.keywords || []).forEach(item => {
+                const card = document.createElement('div');
+                card.className = 'keyword-card';
+                card.innerHTML = `
+                    <strong>${escapeHtml(item.term || '')}</strong>
+                    ${escapeHtml(item.meaning || '')}
+                    <span>${escapeHtml(item.note || '')}</span>
+                `;
+                keywordGrid.appendChild(card);
+            });
+
+            const patterns = (data.sentence_patterns || []).map(item => `• ${item}`).join('\n');
+            const notes = (data.student_notes || []).map((item, index) => `${index + 1}. ${item}`).join('\n');
+            document.getElementById('learningNotesText').textContent = [patterns, notes].filter(Boolean).join('\n\n');
+
+            document.querySelectorAll('#learningOutput .tab').forEach((tab, index) => {
+                tab.classList.toggle('active', index === 0);
+            });
+            document.querySelectorAll('#learningOutput .tab-content').forEach((content, index) => {
+                content.classList.toggle('active', index === 0);
+            });
+        }
+
+        async function generateLearningFromYoutube() {
+            if (!currentData || !currentData.transcript) {
+                alert('请先提取 YouTube 字幕');
+                return;
+            }
+
+            const loading = document.getElementById('youtubeLearningLoading');
+            const output = document.getElementById('youtubeLearningOutput');
+            const error = document.getElementById('youtubeLearningError');
+            const success = document.getElementById('youtubeLearningSuccess');
+            const filename = document.getElementById('filename').value.trim();
+            const title = filename || `YouTube_${currentData.video_id || 'Transcript'}`;
+
+            output.classList.remove('show');
+            error.classList.remove('show');
+            success.classList.remove('show');
+            loading.classList.add('show');
+
+            try {
+                const response = await fetch('http://localhost:8002/generate-learning-from-transcript', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        title: title,
+                        transcript: currentData.transcript,
+                        video_url: currentData.video_url,
+                        video_id: currentData.video_id
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    displayYoutubeLearningMaterial(data);
+                    success.innerHTML = `✅ 学习资料已保存到: <strong>${data.markdown_file}</strong><br><a href="http://localhost:8002${data.docx_download_url}" target="_blank">下载 Word DOCX 版本</a>`;
+                    success.classList.add('show');
+                    output.classList.add('show');
+                    output.scrollIntoView({ behavior: 'smooth' });
+                } else {
+                    error.innerHTML = `❌ ${data.error || '生成失败'}`;
+                    error.classList.add('show');
+                }
+            } catch (err) {
+                error.innerHTML = `❌ 生成失败: ${err.message}`;
+                error.classList.add('show');
+            } finally {
+                loading.classList.remove('show');
+            }
+        }
+
+        function displayYoutubeLearningMaterial(data) {
+            document.getElementById('youtubeLearningChineseText').textContent = data.chinese_translation || '';
+
+            const keywordGrid = document.getElementById('youtubeLearningKeywordGrid');
+            keywordGrid.innerHTML = '';
+            (data.keywords || []).forEach(item => {
+                const card = document.createElement('div');
+                card.className = 'keyword-card';
+                card.innerHTML = `
+                    <strong>${escapeHtml(item.term || '')}</strong>
+                    ${escapeHtml(item.meaning || '')}
+                    <span>${escapeHtml(item.note || '')}</span>
+                `;
+                keywordGrid.appendChild(card);
+            });
+
+            const patterns = (data.sentence_patterns || []).map(item => `• ${item}`).join('\n');
+            const notes = (data.student_notes || []).map((item, index) => `${index + 1}. ${item}`).join('\n');
+            document.getElementById('youtubeLearningNotesText').textContent = [patterns, notes].filter(Boolean).join('\n\n');
+
+            document.querySelectorAll('#youtubeLearningOutput .tab').forEach((tab, index) => {
+                tab.classList.toggle('active', index === 0);
+            });
+            document.querySelectorAll('#youtubeLearningOutput .tab-content').forEach((content, index) => {
+                content.classList.toggle('active', index === 0);
+            });
+        }
+
+        function switchYoutubeLearningTab(event, tab) {
+            document.querySelectorAll('#youtubeLearningOutput .tab').forEach(t => t.classList.remove('active'));
+            event.target.classList.add('active');
+
+            document.querySelectorAll('#youtubeLearningOutput .tab-content').forEach(c => c.classList.remove('active'));
+            document.getElementById(tab + 'Tab').classList.add('active');
+        }
+
+        function switchLearningTab(event, tab) {
+            document.querySelectorAll('#learningOutput .tab').forEach(t => t.classList.remove('active'));
+            event.target.classList.add('active');
+
+            document.querySelectorAll('#learningOutput .tab-content').forEach(c => c.classList.remove('active'));
+            document.getElementById(tab + 'Tab').classList.add('active');
+        }
+
+        function clearLearningForm() {
+            document.getElementById('learningForm').reset();
+            document.getElementById('learningOutput').classList.remove('show');
+            document.getElementById('learningError').classList.remove('show');
+            document.getElementById('learningSuccess').classList.remove('show');
+        }
+
+        function escapeHtml(value) {
+            return String(value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
 
         function displayTimestampedTranscript(segments) {
             const container = document.getElementById('transcriptContainer');
