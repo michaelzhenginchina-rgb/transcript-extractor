@@ -532,7 +532,6 @@
 
                 <div class="buttons">
                     <button type="button" class="btn btn-secondary" onclick="clearForm()">清空</button>
-                    <button type="button" class="btn btn-secondary" onclick="downloadFullAudioFromInput()">下载完整音频 MP3</button>
                     <button type="submit" class="btn btn-primary" id="submitBtn">提取字幕</button>
                 </div>
             </form>
@@ -554,7 +553,8 @@
             <div class="output" id="output">
                 <h3>✅ 字幕已提取</h3>
                 <div class="youtube-actions">
-                    <span>这份 YouTube 字幕可以直接继续生成中文翻译、关键词、句型和学习建议。</span>
+                    <span id="resultActionText">这份字幕可以继续生成中文翻译、关键词、句型和学习建议。</span>
+                    <button class="learning-btn" id="resultAudioBtn" onclick="downloadFullAudio()">下载完整音频 MP3</button>
                     <button class="learning-btn" onclick="generateLearningFromYoutube()">生成学习资料</button>
                 </div>
 
@@ -724,7 +724,16 @@
 
                     // Show success
                     output.classList.add('show');
-                    const audioLine = data.audio_file ? `<br>🎵 音频已保存到: <strong>${data.audio_file}</strong>` : '';
+                    const resultActionText = document.getElementById('resultActionText');
+                    const resultAudioBtn = document.getElementById('resultAudioBtn');
+                    const audioLine = data.audio_file ? `<br>🎵 音频已保存到: <strong>${data.audio_file}</strong>` : '<br>🎵 可在结果区下载完整音频 MP3';
+                    if (data.audio_file) {
+                        resultActionText.textContent = '音频已经随转录保存；你也可以继续生成学习资料。';
+                        resultAudioBtn.textContent = '重新下载完整音频 MP3';
+                    } else {
+                        resultActionText.textContent = '字幕已生成；需要音频的话，可以下载完整 MP3。';
+                        resultAudioBtn.textContent = '下载完整音频 MP3';
+                    }
                     success.innerHTML = `✅ 字幕已保存到: <strong>${data.file_path}</strong>${audioLine}`;
                     success.classList.add('show');
                     output.scrollIntoView({ behavior: 'smooth' });
@@ -1033,18 +1042,9 @@
             }
         }
 
-        async function downloadFullAudioFromInput() {
-            const inputUrl = document.getElementById('youtubeUrl').value.trim();
-            if (!inputUrl) {
-                alert('请先粘贴视频链接');
-                return;
-            }
-            await downloadFullAudioForUrl(inputUrl);
-        }
-
         async function downloadFullAudio() {
             if (!currentData) {
-                await downloadFullAudioFromInput();
+                alert('请先提取字幕，完成后再下载完整音频。');
                 return;
             }
             await downloadFullAudioForUrl(currentData.video_url);
