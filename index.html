@@ -559,8 +559,8 @@
                 </div>
 
                 <div class="tabs">
-                    <button class="tab active" onclick="switchTab('timestamps')">带时间戳（学习模式）</button>
-                    <button class="tab" onclick="switchTab('plain')">纯文本</button>
+                    <button class="tab active" onclick="switchTab('timestamps', this)">带时间戳（学习模式）</button>
+                    <button class="tab" onclick="switchTab('plain', this)">纯文本</button>
                 </div>
 
                 <!-- Timestamp View -->
@@ -1079,13 +1079,13 @@
             }
         }
 
-        function switchTab(tab) {
+        function switchTab(tab, button) {
             // Update tab buttons
-            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-            event.target.classList.add('active');
+            document.querySelectorAll('#output > .tabs .tab').forEach(t => t.classList.remove('active'));
+            if (button) button.classList.add('active');
 
             // Update tab content
-            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            document.querySelectorAll('#timestampsTab, #plainTab').forEach(c => c.classList.remove('active'));
             document.getElementById(tab + 'Tab').classList.add('active');
         }
 
