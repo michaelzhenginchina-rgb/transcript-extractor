@@ -86,7 +86,7 @@ def download_url_audio(url, output_dir, output_stem):
     """Download audio from a supported public URL with yt-dlp."""
     os.makedirs(output_dir, exist_ok=True)
     output_template = os.path.join(output_dir, f"{output_stem}.%(ext)s")
-    cmd = [
+    base_cmd = [
         'yt-dlp',
         '-f', 'bestaudio/best',
         '--extract-audio',
@@ -94,11 +94,21 @@ def download_url_audio(url, output_dir, output_stem):
         '--audio-quality', '0',
         '--no-playlist',
         '-o', output_template,
-        url
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
-    if result.returncode != 0:
-        raise Exception(f"yt-dlp could not download audio: {result.stderr[-1600:]}")
+
+    attempts = [
+        base_cmd + [url],
+        base_cmd + ['--cookies-from-browser', 'chrome', url],
+    ]
+
+    errors = []
+    for cmd in attempts:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        if result.returncode == 0:
+            break
+        errors.append(result.stderr[-1600:])
+    else:
+        raise Exception("yt-dlp could not download audio:\n" + "\n\n".join(errors))
 
     candidates = [
         os.path.join(output_dir, name)
@@ -108,6 +118,29 @@ def download_url_audio(url, output_dir, output_stem):
     if not candidates:
         raise Exception("yt-dlp finished, but no audio file was created.")
     return max(candidates, key=os.path.getmtime)
+
+def download_full_audio_with_ytdlp(url, output_filename):
+    """Download a full MP3 with yt-dlp, retrying with Chrome cookies when needed."""
+    base_cmd = [
+        'yt-dlp',
+        '-x',
+        '--audio-format', 'mp3',
+        '--audio-quality', '0',
+        '-o', output_filename,
+    ]
+    attempts = [
+        base_cmd + [url],
+        base_cmd + ['--cookies-from-browser', 'chrome', url],
+    ]
+
+    errors = []
+    for cmd in attempts:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        if result.returncode == 0:
+            return
+        errors.append(result.stderr[-1600:])
+
+    raise Exception("Failed to download audio:\n" + "\n\n".join(errors))
 
 def get_transcript(video_id):
     """Extract transcript using youtube-transcript-api with timestamps"""
@@ -1140,20 +1173,7 @@ def download_full_audio():
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_filename = os.path.join(desktop_path, f"{output_name}_{timestamp}.mp3")
 
-        # Extract full audio
-        cmd = [
-            'yt-dlp',
-            '-x',
-            '--audio-format', 'mp3',
-            '--audio-quality', '0',
-            '-o', output_filename,
-            video_url
-        ]
-
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-
-        if result.returncode != 0:
-            raise Exception(f"Failed to download audio: {result.stderr}")
+        download_full_audio_with_ytdlp(video_url, output_filename)
 
         # Get file size
         file_size = os.path.getsize(output_filename)
