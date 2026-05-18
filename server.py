@@ -233,8 +233,41 @@ def prepare_uploaded_audio(input_path, work_dir):
         raise Exception(f"Could not extract audio with ffmpeg: {result.stderr[-1200:]}")
     return wav_path
 
-def transcribe_uploaded_media(input_path, output_base):
-    """Transcribe uploaded audio/video using local whisper-cli."""
+def whisper_timestamp_to_seconds(value):
+    """Convert whisper.cpp timestamps like HH:MM:SS,mmm to seconds."""
+    match = re.match(r'(\d+):(\d+):(\d+)[,.](\d+)', value or '')
+    if not match:
+        return 0
+    hours, minutes, seconds, millis = match.groups()
+    return int(hours) * 3600 + int(minutes) * 60 + int(seconds) + int(millis[:3].ljust(3, '0')) / 1000
+
+def read_whisper_segments(output_base):
+    """Read timestamped segments from whisper.cpp JSON output."""
+    json_path = f"{output_base}.json"
+    if not os.path.exists(json_path):
+        return []
+
+    with open(json_path, 'r', encoding='utf-8', errors='replace') as f:
+        data = json.load(f)
+
+    segments = []
+    for item in data.get('transcription', []):
+        timestamps = item.get('timestamps') or {}
+        start = whisper_timestamp_to_seconds(timestamps.get('from'))
+        end = whisper_timestamp_to_seconds(timestamps.get('to'))
+        text = (item.get('text') or '').strip()
+        if not text:
+            continue
+        segments.append({
+            'timestamp': format_timestamp(start),
+            'start': start,
+            'duration': max(0, end - start),
+            'text': text
+        })
+    return segments
+
+def transcribe_uploaded_media_with_segments(input_path, output_base):
+    """Transcribe uploaded audio/video using local whisper-cli and return text + segments."""
     if not os.path.exists(WHISPER_MODEL):
         raise Exception(f"Whisper model not found: {WHISPER_MODEL}")
 
@@ -260,7 +293,14 @@ def transcribe_uploaded_media(input_path, output_base):
         raise Exception("Whisper finished, but no transcript text file was created.")
 
     with open(txt_path, 'r', encoding='utf-8', errors='replace') as f:
-        return clean_transcript_text(f.read())
+        transcript_text = clean_transcript_text(f.read())
+
+    return transcript_text, read_whisper_segments(output_base)
+
+def transcribe_uploaded_media(input_path, output_base):
+    """Transcribe uploaded audio/video using local whisper-cli."""
+    transcript_text, _segments = transcribe_uploaded_media_with_segments(input_path, output_base)
+    return transcript_text
 
 def create_learning_material_with_openai(transcript_text, title):
     """Create Chinese translation, keywords, sentence patterns, and notes."""
@@ -606,9 +646,9 @@ def extract():
                 output_stem = safe_slug(filename or f"youtube_{video_id}_{timestamp}", "youtube_audio")
                 audio_file = download_url_audio(url, media_output_dir, output_stem)
                 output_base = os.path.join(media_output_dir, f"{output_stem}_raw")
-                raw_transcript = transcribe_uploaded_media(audio_file, output_base)
+                raw_transcript, whisper_segments = transcribe_uploaded_media_with_segments(audio_file, output_base)
                 formatted_transcript = format_with_openai(raw_transcript)
-                timestamped_transcript = make_plain_timestamped_transcript(formatted_transcript)
+                timestamped_transcript = whisper_segments or make_plain_timestamped_transcript(formatted_transcript)
                 source_type = 'youtube_audio_whisper'
         else:
             parsed = urllib.parse.urlparse(url)
@@ -616,9 +656,9 @@ def extract():
             output_stem = safe_slug(filename or f"{host_slug}_{timestamp}", "remote_audio")
             audio_file = download_url_audio(url, media_output_dir, output_stem)
             output_base = os.path.join(media_output_dir, f"{output_stem}_raw")
-            raw_transcript = transcribe_uploaded_media(audio_file, output_base)
+            raw_transcript, whisper_segments = transcribe_uploaded_media_with_segments(audio_file, output_base)
             formatted_transcript = format_with_openai(raw_transcript)
-            timestamped_transcript = make_plain_timestamped_transcript(formatted_transcript)
+            timestamped_transcript = whisper_segments or make_plain_timestamped_transcript(formatted_transcript)
             source_id = host_slug
 
         # Determine output filename
