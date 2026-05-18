@@ -515,12 +515,12 @@
         <div class="form-content">
             <section class="tool-section">
                 <h2>YouTube 字幕提取</h2>
-                <p class="section-note">输入 YouTube 链接，先提取字幕；字幕出来后，可以继续用同一份字幕生成学习资料。</p>
+                <p class="section-note">输入 YouTube、Instagram、TikTok 等视频链接，优先提取平台字幕；没有字幕时会下载音频并用 Whisper 转录。</p>
 
             <form id="transcriptForm">
                 <div class="form-group">
-                    <label for="youtubeUrl">YouTube 链接 <span class="required">*</span></label>
-                    <input type="text" id="youtubeUrl" required placeholder="https://www.youtube.com/watch?v=...">
+                    <label for="youtubeUrl">视频链接 <span class="required">*</span></label>
+                    <input type="text" id="youtubeUrl" required placeholder="https://www.youtube.com/watch?v=... 或 https://www.instagram.com/p/...">
                     <small>粘贴任何 YouTube 视频链接</small>
                 </div>
 
@@ -540,7 +540,7 @@
             <!-- Loading -->
             <div class="loading" id="loading">
                 <div class="spinner"></div>
-                <p>正在提取和格式化字幕...</p>
+                <p>正在提取字幕；如无平台字幕，会下载音频并转录...</p>
             </div>
 
             <!-- Error -->

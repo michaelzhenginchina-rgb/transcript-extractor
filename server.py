@@ -37,8 +37,19 @@ FFMPEG = os.getenv('FFMPEG') or shutil.which('ffmpeg') or '/opt/homebrew/bin/ffm
 MEDIA_EXTENSIONS = {'.mp3', '.wav', '.flac', '.ogg', '.mp4', '.mov', '.m4a', '.aac', '.webm'}
 DIRECT_AUDIO_EXTENSIONS = {'.mp3', '.wav', '.flac', '.ogg'}
 
+def is_youtube_url(url):
+    """Return True when the submitted URL is a YouTube link."""
+    parsed = urllib.parse.urlparse(url)
+    hostname = (parsed.hostname or '').lower()
+    return hostname in {'youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtu.be'} or hostname.endswith('.youtube.com')
+
+def safe_slug(value, fallback='media'):
+    """Create a filesystem-safe short slug."""
+    slug = re.sub(r'[^\w\s-]', '', value or '').strip().replace(' ', '_')
+    return slug[:80] or fallback
+
 def extract_video_id(url):
-    """Extract video ID from YouTube URL (including short URLs)"""
+    """Extract video ID from supported YouTube URL shapes."""
     patterns = [
         # Standard YouTube watch URLs
         r'youtube\.com\/watch\?.*v=([a-zA-Z0-9_-]{11})',
@@ -54,12 +65,49 @@ def extract_video_id(url):
         if match:
             return match.group(1)
 
-    # If no match, try to extract any 11-character YouTube ID pattern
-    generic_match = re.search(r'([a-zA-Z0-9_-]{11})', url)
-    if generic_match:
-        return generic_match.group(1)
-
     return None
+
+def make_plain_timestamped_transcript(transcript_text):
+    """Create simple transcript segments when Whisper does not provide timestamps."""
+    chunks = [chunk.strip() for chunk in re.split(r'\n{2,}', transcript_text or '') if chunk.strip()]
+    if not chunks and transcript_text.strip():
+        chunks = [transcript_text.strip()]
+    return [
+        {
+            'timestamp': '00:00',
+            'start': 0,
+            'duration': 0,
+            'text': chunk
+        }
+        for chunk in chunks
+    ]
+
+def download_url_audio(url, output_dir, output_stem):
+    """Download audio from a supported public URL with yt-dlp."""
+    os.makedirs(output_dir, exist_ok=True)
+    output_template = os.path.join(output_dir, f"{output_stem}.%(ext)s")
+    cmd = [
+        'yt-dlp',
+        '-f', 'bestaudio/best',
+        '--extract-audio',
+        '--audio-format', 'mp3',
+        '--audio-quality', '0',
+        '--no-playlist',
+        '-o', output_template,
+        url
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+    if result.returncode != 0:
+        raise Exception(f"yt-dlp could not download audio: {result.stderr[-1600:]}")
+
+    candidates = [
+        os.path.join(output_dir, name)
+        for name in os.listdir(output_dir)
+        if name.startswith(output_stem + '.') and os.path.splitext(name)[1].lower() in DIRECT_AUDIO_EXTENSIONS
+    ]
+    if not candidates:
+        raise Exception("yt-dlp finished, but no audio file was created.")
+    return max(candidates, key=os.path.getmtime)
 
 def get_transcript(video_id):
     """Extract transcript using youtube-transcript-api with timestamps"""
@@ -512,7 +560,7 @@ def extract_audio_segment(video_url, start_time, end_time, output_filename):
 
 @app.route('/extract', methods=['POST'])
 def extract():
-    """Extract and format transcript from YouTube URL with timestamps"""
+    """Extract transcript from YouTube captions or by downloading audio and using Whisper."""
     try:
         data = request.json
         if not data:
@@ -522,42 +570,62 @@ def extract():
         filename = data.get('filename', '') or ''
 
         if not url or not url.strip():
-            return jsonify({'error': 'YouTube URL is required'}), 400
+            return jsonify({'error': 'URL is required'}), 400
 
         url = url.strip()
         filename = filename.strip()
 
-        # Extract video ID
-        video_id = extract_video_id(url)
-        if not video_id:
-            return jsonify({'error': 'Invalid YouTube URL'}), 400
-
-        # Step 1: Extract raw transcript with timestamps
-        raw_transcript, transcript_data = get_transcript(video_id)
-
-        # Step 2: Format with OpenAI
-        formatted_transcript = format_with_openai(raw_transcript)
-
-        # Step 3: Create timestamped transcript (for learning)
-        timestamped_transcript = []
-        for entry in transcript_data:
-            timestamp = format_timestamp(entry['start'])
-            timestamped_transcript.append({
-                'timestamp': timestamp,
-                'start': entry['start'],
-                'duration': entry.get('duration', 0),
-                'text': entry['text']
-            })
-
-        # Step 4: Save to file
         desktop_path = os.path.expanduser("~/Desktop")
+        media_output_dir = os.path.join(desktop_path, "字幕提取-下载音频")
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        source_id = None
+        source_type = 'url_audio_whisper'
+        audio_file = None
+
+        if is_youtube_url(url):
+            video_id = extract_video_id(url)
+            if not video_id:
+                return jsonify({'error': 'Invalid YouTube URL'}), 400
+
+            try:
+                raw_transcript, transcript_data = get_transcript(video_id)
+                formatted_transcript = format_with_openai(raw_transcript)
+                timestamped_transcript = []
+                for entry in transcript_data:
+                    timestamp_label = format_timestamp(entry['start'])
+                    timestamped_transcript.append({
+                        'timestamp': timestamp_label,
+                        'start': entry['start'],
+                        'duration': entry.get('duration', 0),
+                        'text': entry['text']
+                    })
+                source_id = video_id
+                source_type = 'youtube_transcript'
+            except Exception:
+                source_id = video_id
+                output_stem = safe_slug(filename or f"youtube_{video_id}_{timestamp}", "youtube_audio")
+                audio_file = download_url_audio(url, media_output_dir, output_stem)
+                output_base = os.path.join(media_output_dir, f"{output_stem}_raw")
+                raw_transcript = transcribe_uploaded_media(audio_file, output_base)
+                formatted_transcript = format_with_openai(raw_transcript)
+                timestamped_transcript = make_plain_timestamped_transcript(formatted_transcript)
+                source_type = 'youtube_audio_whisper'
+        else:
+            parsed = urllib.parse.urlparse(url)
+            host_slug = safe_slug(parsed.netloc.replace('.', '_'), 'remote')
+            output_stem = safe_slug(filename or f"{host_slug}_{timestamp}", "remote_audio")
+            audio_file = download_url_audio(url, media_output_dir, output_stem)
+            output_base = os.path.join(media_output_dir, f"{output_stem}_raw")
+            raw_transcript = transcribe_uploaded_media(audio_file, output_base)
+            formatted_transcript = format_with_openai(raw_transcript)
+            timestamped_transcript = make_plain_timestamped_transcript(formatted_transcript)
+            source_id = host_slug
 
         # Determine output filename
         if filename:
             output_filename = filename if filename.endswith('.txt') else f"{filename}.txt"
         else:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_filename = f"transcript_{video_id}_{timestamp}.txt"
+            output_filename = f"transcript_{source_id}_{timestamp}.txt"
 
         output_path = os.path.join(desktop_path, output_filename)
 
@@ -569,8 +637,10 @@ def extract():
         timestamped_filename = output_path.replace('.txt', '_timestamps.json')
         with open(timestamped_filename, 'w', encoding='utf-8') as f:
             json.dump({
-                'video_id': video_id,
+                'video_id': source_id,
                 'video_url': url,
+                'source_type': source_type,
+                'audio_file': audio_file,
                 'extracted_at': datetime.now().isoformat(),
                 'transcript': timestamped_transcript
             }, f, indent=2, ensure_ascii=False)
@@ -581,8 +651,10 @@ def extract():
             'timestamped_transcript': timestamped_transcript,
             'file_path': output_path,
             'timestamped_file': timestamped_filename,
-            'video_id': video_id,
-            'video_url': url
+            'video_id': source_id,
+            'video_url': url,
+            'source_type': source_type,
+            'audio_file': audio_file
         })
 
     except Exception as e:
